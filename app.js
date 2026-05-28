@@ -784,7 +784,7 @@ function renderAlleBuecher() {
     if (e.target.closest('.bl-edit'))  { openEditBookModal(authorId, bookId); return; }
     if (e.target.closest('.bl-fav'))   { quickToggleFavorite(authorId, bookId); return; }
     if (e.target.closest('.book-list-row')) {
-      if (item.classList.contains('expanded')) { openEditBookModal(authorId, bookId); return; }
+      if (item.classList.contains('expanded')) { item.classList.remove('expanded'); return; }
       document.querySelectorAll('.book-list-item.expanded').forEach(i=>i.classList.remove('expanded'));
       item.classList.add('expanded');
       lazyLoadListDescription(authorId, bookId, item);
