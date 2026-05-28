@@ -48,6 +48,44 @@ const GENRE_EN_MAP = {
 };
 function genreForApi(g) { return GENRE_API_MAP[g] || GENRE_EN_MAP[g] || g; }
 
+// Returns true if a Google Books item matches the target language.
+// For 'de': permissive (no language tag = assume German, many DE books lack it).
+// For 'en': strict (must have language === 'en').
+function matchesLang(i, lang) {
+  const l = i.volumeInfo?.language;
+  if (lang === 'de') return !l || l === 'de';
+  return l === lang;
+}
+
+// Normalize a book title for deduplication: lowercase, strip parentheticals + punctuation
+function normTitle(t) {
+  return String(t||'').toLowerCase()
+    .replace(/\s*[\(\[].+?[\)\]]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+// Deduplicate raw Google Books API items by title; prefer items with a cover.
+function dedupeRaw(items) {
+  const seen = new Map();
+  const result = [];
+  for (const i of items) {
+    const key = normTitle(i.volumeInfo?.title || '');
+    if (!key) continue;
+    if (!seen.has(key)) { seen.set(key, result.length); result.push(i); }
+    else {
+      const idx = seen.get(key);
+      if (i.volumeInfo?.imageLinks?.thumbnail && !result[idx].volumeInfo?.imageLinks?.thumbnail) result[idx] = i;
+    }
+  }
+  return result;
+}
+// Deduplicate already-mapped book objects by title.
+function dedupeBooks(books) {
+  const seen = new Set();
+  return books.filter(b => { const k = normTitle(b.title||''); if (!k||seen.has(k)) return false; seen.add(k); return true; });
+}
+
 // Curated German-market bestseller authors per genre → used instead of subject: searches
 // Keys cover both German genre names AND English Google Books category names
 // Arrays of authors per genre — queried individually (OR doesn't work in Google Books API)
@@ -96,6 +134,7 @@ const S = {
   suggestions:           [],
   authorBookFilter:      {},
   dismissedAuthors:      new Set(),
+  customSuggestedAuthors: [],
 };
 
 /* ===== FIREBASE ===== */
@@ -237,8 +276,10 @@ function clearInlineAuthorSearch() {
 function renderInlineSuggestedChips() {
   const container = document.getElementById('inline-suggested-chips');
   if (!container) return;
-  const visible = SUGGESTED_AUTHORS.filter(n => !S.dismissedAuthors.has(n));
-  const hasDismissed = S.dismissedAuthors.size > 0;
+  // Custom (from Discover) first, then default list — no duplicates
+  const allSuggestions = [...new Set([...S.customSuggestedAuthors, ...SUGGESTED_AUTHORS])];
+  const visible = allSuggestions.filter(n => !S.dismissedAuthors.has(n));
+  const hasDismissed = S.dismissedAuthors.size > 0 || S.customSuggestedAuthors.some(n => S.dismissedAuthors.has(n));
   container.innerHTML = visible.map(name => {
     const added = S.authors.some(a => a.name.toLowerCase()===name.toLowerCase());
     if (added) return `<button class="suggested-chip" disabled data-name="${esc(name)}">✓ ${esc(name)}</button>`;
@@ -256,11 +297,11 @@ function renderInlineSuggestedChips() {
   };
 }
 
-async function fetchBooksForAuthor(name) {
-  const data = await fetchJson(`${API}?q=inauthor:${encodeURIComponent('"'+name+'"')}&maxResults=40&orderBy=newest`);
+async function fetchBooksForAuthor(name, lang = 'de') {
+  const data = await fetchJson(`${API}?q=inauthor:${encodeURIComponent('"'+name+'"')}&maxResults=40&orderBy=newest&langRestrict=${lang}`);
   const last  = name.split(' ').slice(-1)[0].toLowerCase();
-  return (data.items||[])
-    .filter(i => (i.volumeInfo?.authors||[]).some(a => a.toLowerCase().includes(last)))
+  return dedupeRaw((data.items||[])
+    .filter(i => matchesLang(i, lang) && (i.volumeInfo?.authors||[]).some(a => a.toLowerCase().includes(last))))
     .map(i => ({
       id: i.id, googleId: i.id,
       title:   i.volumeInfo?.title   || 'Unbekannt',
@@ -274,17 +315,39 @@ async function fetchBooksForAuthor(name) {
     }));
 }
 
+async function switchAuthorLang(authorId, lang) {
+  const author = S.authors.find(a => a.id === authorId);
+  if (!author || author.lang === lang) return;
+  showLoading(`Bücher auf ${lang === 'de' ? 'Deutsch' : 'Englisch'} werden geladen …`);
+  try {
+    const newBooks = await fetchBooksForAuthor(author.name, lang);
+    const withAuth = newBooks.map(b => ({...b, authorId, id:`${authorId}_${b.googleId}`}));
+    // Remove old books from Firebase
+    const oldBooks = S.books[authorId] || [];
+    await Promise.all(oldBooks.map(b => col('books').doc(b.id).delete()));
+    // Save new books
+    await Promise.all(withAuth.map(b => saveBook(b)));
+    // Update author lang + genres
+    author.lang = lang;
+    author.genres = [...new Set(newBooks.flatMap(b=>b.genres))].slice(0,5);
+    await updateAuthorMeta(authorId, { lang: author.lang, genres: author.genres });
+    S.books[authorId] = withAuth;
+    renderAutoren(); renderAlleBuecher(); renderFavoriten();
+  } catch(e) { console.error(e); alert('Fehler beim Laden – bitte nochmal versuchen.'); }
+  finally { hideLoading(); }
+}
+
 async function checkNewBooksForAuthor(author) {
-  // Only books from the current or last year (e.g. 2025 or 2026)
+  const lang = author.lang || 'de';
   const cutoffYear = new Date().getFullYear() - 1;
   const last = author.name.split(' ').slice(-1)[0].toLowerCase();
-  const data  = await fetchJson(`${API}?q=inauthor:${encodeURIComponent('"'+author.name+'"')}&maxResults=20&orderBy=newest`);
-  return (data.items||[])
+  const data  = await fetchJson(`${API}?q=inauthor:${encodeURIComponent('"'+author.name+'"')}&maxResults=20&orderBy=newest&langRestrict=${lang}`);
+  return dedupeRaw((data.items||[])
     .filter(i => {
       const yr = parseInt((i.volumeInfo?.publishedDate||'').slice(0,4));
       const authorsOk = (i.volumeInfo?.authors||[]).some(a=>a.toLowerCase().includes(last));
-      return yr && yr >= cutoffYear && authorsOk;
-    })
+      return yr && yr >= cutoffYear && authorsOk && matchesLang(i, lang);
+    }))
     .map(i => ({ id:i.id, googleId:i.id, title:i.volumeInfo?.title||'?',
       authors:i.volumeInfo?.authors||[author.name],
       coverId:i.volumeInfo?.imageLinks?.thumbnail?.replace('http://','https://')||null,
@@ -438,7 +501,7 @@ async function addAuthorFromSearch(name) { await addAuthor(name, null); }
 /* ===== PER-AUTHOR BOOK FILTER ===== */
 function filterAuthorBooks(authorId, query) {
   S.authorBookFilter[authorId] = query;
-  const books = (S.books[authorId]||[]).filter(b => !query || b.title.toLowerCase().includes(query.toLowerCase()));
+  const books = dedupeBooks((S.books[authorId]||[]).filter(b => !query || b.title.toLowerCase().includes(query.toLowerCase())));
   const grid  = document.getElementById(`grid-${authorId}`);
   const count = document.getElementById(`count-${authorId}`);
   if (grid)  grid.innerHTML  = renderBooksGrid(books, authorId);
@@ -455,6 +518,7 @@ function doLogin() {
 }
 function startApp() {
   S.dismissedAuthors = loadDismissedAuthors();
+  S.customSuggestedAuthors = loadCustomSuggestions();
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   loadAndRender();
@@ -538,7 +602,7 @@ async function addAuthor(name, imgUrl) {
     const books  = await fetchBooksForAuthor(name);
     const genres = [...new Set(books.flatMap(b=>b.genres))].slice(0,5);
     const authorId = `a_${Date.now()}`;
-    author   = { id:authorId, name, imageUrl:imgUrl?imgUrl.replace('http://','https://'):null, genres, addedAt:Date.now(), lastChecked:Date.now(), newCount:0 };
+    author   = { id:authorId, name, imageUrl:imgUrl?imgUrl.replace('http://','https://'):null, genres, lang:'de', addedAt:Date.now(), lastChecked:Date.now(), newCount:0 };
     withAuth = books.map(b => ({...b, authorId, id:`${authorId}_${b.googleId}`}));
   } catch(e) { console.error(e); hideLoading(); return; }
   S.authors.push(author);
@@ -560,13 +624,18 @@ function renderAutoren() {
     return;
   }
   list.innerHTML = S.authors.map(author => {
-    const books    = S.books[author.id]||[];
+    const books    = dedupeBooks(S.books[author.id]||[]);
     const readCount= books.filter(b=>b.rating).length;
+    const lang     = author.lang || 'de';
     const av = author.imageUrl
       ? `<img class="author-avatar" src="${author.imageUrl}" alt="${esc(author.name)}">`
       : `<div class="author-avatar-placeholder">✍️</div>`;
     const genres = (author.genres||[]).slice(0,4).map(g=>`<span class="genre-tag">${esc(g)}</span>`).join('');
     const newB   = (author.newCount||0)>0 ? `<span class="author-new-badge" onclick="event.stopPropagation();goToNewBook('${author.id}')">🆕 ${author.newCount} neu</span>` : '';
+    const langToggle = `<div class="author-lang-toggle" onclick="event.stopPropagation()">
+      <button class="lang-btn${lang==='de'?' active':''}" onclick="switchAuthorLang('${author.id}','de')">DE</button>
+      <button class="lang-btn${lang==='en'?' active':''}" onclick="switchAuthorLang('${author.id}','en')">EN</button>
+    </div>`;
     return `<div class="author-card" id="author-${author.id}">
       <div class="author-header" onclick="toggleAuthor('${author.id}')">
         ${av}
@@ -575,7 +644,7 @@ function renderAutoren() {
           <div class="author-meta">${books.length} Bücher · ${readCount} bewertet</div>
           <div class="author-genres">${genres}</div>
         </div>
-        <div class="author-actions">${newB}<button class="author-delete-btn" onclick="event.stopPropagation();startDeleteAuthor('${author.id}','${esc(author.name)}')">🗑</button><span class="author-toggle">▼</span></div>
+        <div class="author-actions">${newB}${langToggle}<button class="author-delete-btn" onclick="event.stopPropagation();startDeleteAuthor('${author.id}','${esc(author.name)}')">🗑</button><span class="author-toggle">▼</span></div>
       </div>
       <div class="author-books">
         <div class="author-book-filter">
@@ -594,6 +663,7 @@ function renderAutoren() {
 function toggleAuthor(id) { document.getElementById(`author-${id}`)?.classList.toggle('expanded'); }
 
 function renderBooksGrid(books, authorId) {
+  books = dedupeBooks(books);
   if (!books.length) return `<p style="color:var(--tl);font-size:13px;padding:8px 0;grid-column:1/-1;font-family:'Cormorant Garamond',serif;font-style:italic">Kein Buch gefunden.</p>`;
   return books.map(book => {
     const badge   = book.rating ? `<div class="book-rating-badge">${ratingEmoji(book.rating)}</div>` : '';
@@ -668,7 +738,7 @@ function renderBookExpand(book, authorName) {
 function renderAlleBuecher() {
   const list = document.getElementById('books-list');
   let all = [];
-  S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => all.push({...b,_authorName:a.name})));
+  S.authors.forEach(a => dedupeBooks(S.books[a.id]||[]).forEach(b => all.push({...b,_authorName:a.name})));
   if (S.bookFilter==='gelesen')   all = all.filter(b=>b.rating);
   if (S.bookFilter==='favoriten') all = all.filter(b=>b.isFavorite);
   all.sort((a,b) => { if(b.isFavorite!==a.isFavorite) return b.isFavorite?1:-1; if(!!b.rating!==!!a.rating) return b.rating?1:-1; return a._authorName.localeCompare(b._authorName); });
@@ -773,7 +843,7 @@ function clearFavSearch() {
 function renderFavoriten() {
   const grid = document.getElementById('favorites-grid');
   let favs = [];
-  S.authors.forEach(a => (S.books[a.id]||[]).filter(b=>b.isFavorite).forEach(b=>favs.push({...b,_authorName:a.name})));
+  S.authors.forEach(a => dedupeBooks(S.books[a.id]||[]).filter(b=>b.isFavorite).forEach(b=>favs.push({...b,_authorName:a.name})));
   if (S.favSearch) {
     const ql = S.favSearch.toLowerCase();
     favs = favs.filter(b => b.title.toLowerCase().includes(ql) || b._authorName.toLowerCase().includes(ql));
@@ -870,6 +940,13 @@ function loadDismissedAuthors() {
 function saveDismissedAuthors() {
   localStorage.setItem(`bw_dismissed_${S.code}`, JSON.stringify([...S.dismissedAuthors]));
 }
+function loadCustomSuggestions() {
+  try { return JSON.parse(localStorage.getItem(`bw_custom_sug_${S.code}`) || '[]'); }
+  catch { return []; }
+}
+function saveCustomSuggestions() {
+  localStorage.setItem(`bw_custom_sug_${S.code}`, JSON.stringify(S.customSuggestedAuthors));
+}
 function dismissSuggestedAuthor(name) {
   S.dismissedAuthors.add(name);
   saveDismissedAuthors();
@@ -879,6 +956,16 @@ function resetDismissedAuthors() {
   S.dismissedAuthors.clear();
   saveDismissedAuthors();
   renderInlineSuggestedChips();
+}
+function addAuthorToSuggestions(name) {
+  closeDiscDetail();
+  if (!S.customSuggestedAuthors.includes(name)) {
+    S.customSuggestedAuthors.unshift(name);
+    saveCustomSuggestions();
+    renderInlineSuggestedChips();
+  }
+  switchTab('autoren');
+  flashWishBtn(`${name} zu Vorschlägen hinzugefügt ✓`);
 }
 
 function getDiscoverGenres() {
@@ -1132,7 +1219,10 @@ function renderDiscDetailActions(book, isNew) {
            <button class="disc-detail-btn-primary" onclick="closeDiscDetail();openEditBookModal('${existingBook.authorId}','${existingBook.id}')">✏️ Bewertung ändern</button>`
         : `<button class="disc-detail-btn-primary" onclick="closeDiscDetail();openEditBookModal('${existingBook.authorId}','${existingBook.id}')">✏️ Jetzt bewerten</button>`;
     } else if (authorName) {
-      el.innerHTML = `<button class="disc-detail-btn-sage" data-author="${esc(authorName)}" onclick="addAuthorFromDisc(this)">+ ${esc(authorName)} hinzufügen</button>`;
+      el.innerHTML = `
+        <p class="disc-choice-label">Was möchtest du mit <em>${esc(authorName)}</em> machen?</p>
+        <button class="disc-detail-btn-primary" data-author="${esc(authorName)}" onclick="addAuthorFromDisc(this)">📚 Zu meinen Autoren hinzufügen</button>
+        <button class="disc-detail-btn-sage" data-author="${esc(authorName)}" onclick="addAuthorToSuggestions(this.dataset.author)">⭐ Zu den Vorschlägen</button>`;
     } else { el.innerHTML = ''; }
   }
 }
@@ -1144,7 +1234,7 @@ function closeDiscDetail() {
 function addAuthorFromDisc(btn) {
   const name = btn.dataset.author;
   closeDiscDetail();
-  addAuthor(name, null);
+  addAuthor(name, null, 'de');
 }
 
 async function addDiscoverBook(btn, openRating) {

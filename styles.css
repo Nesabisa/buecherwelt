@@ -102,7 +102,11 @@ em{font-style:italic;}
 .author-meta{font-size:11px;color:var(--tl);margin-top:2px;}
 .author-genres{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
 .genre-tag{background:var(--cream);border:1px solid var(--border);color:var(--tl);font-size:10px;padding:2px 8px;border-radius:20px;}
-.author-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.author-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.author-lang-toggle{display:inline-flex;border-radius:8px;overflow:hidden;border:1.5px solid var(--border);}
+.lang-btn{padding:3px 8px;font-size:11px;font-family:'Jost',sans-serif;font-weight:600;border:none;background:var(--white);color:var(--tl);cursor:pointer;transition:all .15s;letter-spacing:.5px;}
+.lang-btn.active{background:var(--rose);color:#fff;}
+.lang-btn:not(.active):hover{background:var(--rl);}
 .author-new-badge{background:var(--sl);color:var(--sd);font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:nowrap;cursor:pointer;transition:background .15s;}
 .author-new-badge:hover{background:var(--sage);color:#fff;}
 .author-toggle{font-size:14px;color:var(--tl);transition:transform .2s;}
@@ -338,6 +342,9 @@ em{font-style:italic;}
 .disc-detail-actions{display:flex;flex-direction:column;gap:9px;}
 .disc-detail-btn-primary{width:100%;padding:12px;border:none;border-radius:13px;font-family:'Jost',sans-serif;font-size:14px;font-weight:500;cursor:pointer;background:linear-gradient(135deg,var(--rose),var(--rd));color:#fff;}
 .disc-detail-btn-sage{width:100%;padding:12px;border:none;border-radius:13px;font-family:'Jost',sans-serif;font-size:14px;font-weight:500;cursor:pointer;background:var(--sl);color:var(--sd);}
+.disc-choice-label{font-size:13px;color:var(--tm);font-family:'Jost',sans-serif;margin:0 0 8px;text-align:center;}
+.disc-choice-label em{font-style:normal;font-weight:600;color:var(--text);}
+#disc-detail-actions{display:flex;flex-direction:column;gap:8px;}
 
 /* ===== DISC CARD DESCRIPTION ===== */
 .disc-desc{font-family:'Cormorant Garamond',serif;font-size:11px;color:var(--tl);line-height:1.5;margin-top:4px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
