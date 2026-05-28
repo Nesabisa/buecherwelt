@@ -310,7 +310,7 @@ async function fetchBooksForAuthor(name, lang = 'de') {
       coverId: i.volumeInfo?.imageLinks?.thumbnail?.replace('http://','https://')||null,
       year:   (i.volumeInfo?.publishedDate||'').slice(0,4),
       genres:   i.volumeInfo?.categories||[],
-      language: i.volumeInfo?.language || null,
+      language: i.volumeInfo?.language || lang,
       description: stripHtml(i.volumeInfo?.description||'').slice(0,500),
       rating: null, note:'', isFavorite:false, isNew:false, addedAt:Date.now(),
     }));
@@ -549,8 +549,8 @@ async function migrateBookLanguages() {
   for (const author of S.authors) {
     const books = S.books[author.id] || [];
     if (!books.length) continue;
-    // Skip if books already have the language field (migrated)
-    if ('language' in books[0]) continue;
+    // Skip if books already have a truthy language field (migrated)
+    if (books[0]?.language) continue;
     const lang = author.lang || 'de';
     try {
       const newBooks = await fetchBooksForAuthor(author.name, lang);
