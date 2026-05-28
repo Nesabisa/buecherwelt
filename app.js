@@ -309,7 +309,8 @@ async function fetchBooksForAuthor(name, lang = 'de') {
       authors: i.volumeInfo?.authors || [name],
       coverId: i.volumeInfo?.imageLinks?.thumbnail?.replace('http://','https://')||null,
       year:   (i.volumeInfo?.publishedDate||'').slice(0,4),
-      genres:  i.volumeInfo?.categories||[],
+      genres:   i.volumeInfo?.categories||[],
+      language: i.volumeInfo?.language || null,
       description: stripHtml(i.volumeInfo?.description||'').slice(0,500),
       rating: null, note:'', isFavorite:false, isNew:false, addedAt:Date.now(),
     }));
@@ -539,6 +540,29 @@ async function loadAndRender() {
   try { await loadAllData(); renderAutoren(); renderAlleBuecher(); renderFavoriten(); renderMerkliste(); renderStatistik(); await loadDiscover(); }
   catch(e) { console.error(e); }
   finally { hideLoading(); }
+  // Background: re-fetch books for authors whose stored books have no language field
+  migrateBookLanguages().catch(() => {});
+}
+
+async function migrateBookLanguages() {
+  let changed = false;
+  for (const author of S.authors) {
+    const books = S.books[author.id] || [];
+    if (!books.length) continue;
+    // Skip if books already have the language field (migrated)
+    if ('language' in books[0]) continue;
+    const lang = author.lang || 'de';
+    try {
+      const newBooks = await fetchBooksForAuthor(author.name, lang);
+      if (!newBooks.length) continue;
+      const withAuth = newBooks.map(b => ({...b, authorId: author.id, id:`${author.id}_${b.googleId}`}));
+      await Promise.all(books.map(b => col('books').doc(b.id).delete()));
+      await Promise.all(withAuth.map(b => saveBook(b)));
+      S.books[author.id] = withAuth;
+      changed = true;
+    } catch(e) { console.error('Lang migration failed for', author.name, e); }
+  }
+  if (changed) { renderAutoren(); renderAlleBuecher(); renderFavoriten(); }
 }
 
 /* ===== NAVIGATION ===== */
@@ -663,7 +687,9 @@ function renderAutoren() {
 function toggleAuthor(id) { document.getElementById(`author-${id}`)?.classList.toggle('expanded'); }
 
 function renderBooksGrid(books, authorId) {
-  books = dedupeBooks(books);
+  const author = S.authors.find(a => a.id === authorId);
+  const lang = author?.lang || 'de';
+  books = dedupeBooks(books).filter(b => !b.language || b.language === lang);
   if (!books.length) return `<p style="color:var(--tl);font-size:13px;padding:8px 0;grid-column:1/-1;font-family:'Cormorant Garamond',serif;font-style:italic">Kein Buch gefunden.</p>`;
   return books.map(book => {
     const badge   = book.rating ? `<div class="book-rating-badge">${ratingEmoji(book.rating)}</div>` : '';
@@ -738,7 +764,12 @@ function renderBookExpand(book, authorName) {
 function renderAlleBuecher() {
   const list = document.getElementById('books-list');
   let all = [];
-  S.authors.forEach(a => dedupeBooks(S.books[a.id]||[]).forEach(b => all.push({...b,_authorName:a.name})));
+  S.authors.forEach(a => {
+    const lang = a.lang || 'de';
+    dedupeBooks(S.books[a.id]||[])
+      .filter(b => !b.language || b.language === lang)
+      .forEach(b => all.push({...b, _authorName: a.name}));
+  });
   if (S.bookFilter==='gelesen')   all = all.filter(b=>b.rating);
   if (S.bookFilter==='favoriten') all = all.filter(b=>b.isFavorite);
   all.sort((a,b) => { if(b.isFavorite!==a.isFavorite) return b.isFavorite?1:-1; if(!!b.rating!==!!a.rating) return b.rating?1:-1; return a._authorName.localeCompare(b._authorName); });
@@ -843,7 +874,10 @@ function clearFavSearch() {
 function renderFavoriten() {
   const grid = document.getElementById('favorites-grid');
   let favs = [];
-  S.authors.forEach(a => dedupeBooks(S.books[a.id]||[]).filter(b=>b.isFavorite).forEach(b=>favs.push({...b,_authorName:a.name})));
+  S.authors.forEach(a => {
+    const lang = a.lang || 'de';
+    dedupeBooks(S.books[a.id]||[]).filter(b => b.isFavorite && (!b.language || b.language === lang)).forEach(b=>favs.push({...b,_authorName:a.name}));
+  });
   if (S.favSearch) {
     const ql = S.favSearch.toLowerCase();
     favs = favs.filter(b => b.title.toLowerCase().includes(ql) || b._authorName.toLowerCase().includes(ql));
