@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Meine Bücherwelt</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=28">
+</head>
+<body>
+
+  <!-- ===== LOGIN ===== -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="login-book">📚</div>
+      <div class="login-eyebrow">Willkommen zurück</div>
+      <h1 class="login-title">Meine <em>Bücherwelt</em></h1>
+      <p class="login-sub">Gib deinen persönlichen Zugangscode ein</p>
+      <input type="password" id="login-code" placeholder="Zugangscode" maxlength="30"
+             onkeydown="if(event.key==='Enter') doLogin()">
+      <button class="login-btn" onclick="doLogin()">Öffnen</button>
+      <p id="login-error" class="login-error hidden">Falscher Code – bitte nochmal versuchen.</p>
+    </div>
+  </div>
+
+  <!-- ===== MAIN APP ===== -->
+  <div id="app" class="app hidden">
+
+    <!-- Header -->
+    <header class="hdr">
+      <div class="hdr-eyebrow">Deine persönliche Bibliothek</div>
+      <h1 class="hdr-title">Meine <em>Bücherwelt</em></h1>
+    </header>
+
+    <!-- Content -->
+    <main class="cnt">
+
+      <!-- TAB: AUTOREN -->
+      <div id="tab-autoren" class="tab-content active">
+
+        <div class="slbl">Autor suchen &amp; hinzufügen</div>
+        <div class="book-search-box">
+          <div class="bs-row">
+            <span class="bs-icon">✍️</span>
+            <input type="text" id="inline-author-search" class="bs-input"
+                   placeholder="Autorenname eingeben …"
+                   oninput="debouncedInlineAuthorSearch(this.value)">
+            <button class="bs-clear hidden" id="ias-clear" onclick="clearInlineAuthorSearch()">✕</button>
+          </div>
+          <div id="inline-author-results" class="btr-list hidden"></div>
+        </div>
+
+        <div class="slbl">Vorschläge</div>
+        <div id="inline-suggested-chips" class="suggested-chips"></div>
+
+        <div class="slbl">Lieblingsautoren</div>
+        <div id="authors-list">
+          <div class="empty" id="authors-empty">
+            <div class="empty-icon">🍁</div>
+            <p>Noch keine Autoren gespeichert.</p>
+            <p class="empty-hint">Such oben nach einem Autor!</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB: BÜCHER -->
+      <div id="tab-buecher" class="tab-content">
+        <div class="slbl">Buch suchen</div>
+        <div class="book-search-box">
+          <div class="bs-row">
+            <span class="bs-icon">📖</span>
+            <input type="text" id="book-title-search" class="bs-input"
+                   placeholder="Buchtitel eingeben …"
+                   oninput="onBookTitleInput(this.value)">
+            <button class="bs-clear hidden" id="bts-clear" onclick="clearBookTitleSearch()">✕</button>
+          </div>
+          <div id="book-title-results" class="btr-list hidden"></div>
+        </div>
+        <div class="filter-pills">
+          <button class="pill active" data-filter="alle"      onclick="setBookFilter('alle',this)">Alle</button>
+          <button class="pill"        data-filter="gelesen"   onclick="setBookFilter('gelesen',this)">Bewertet</button>
+          <button class="pill"        data-filter="favoriten" onclick="setBookFilter('favoriten',this)">Favoriten</button>
+        </div>
+        <div id="books-list">
+          <div class="empty" id="books-empty">
+            <div class="empty-icon">📖</div>
+            <p>Noch keine Bücher vorhanden.</p>
+            <p class="empty-hint">Füge zuerst einen Lieblingsautor hinzu!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: FAVORITEN -->
+      <div id="tab-favoriten" class="tab-content">
+        <div class="slbl">Favoriten suchen</div>
+        <div class="book-search-box">
+          <div class="bs-row">
+            <span class="bs-icon">⭐</span>
+            <input type="text" id="fav-search" class="bs-input" placeholder="Titel oder Autor …"
+                   oninput="filterFavoriten(this.value)">
+            <button class="bs-clear hidden" id="fav-search-clear" onclick="clearFavSearch()">✕</button>
+          </div>
+        </div>
+        <div class="slbl">Meine Lieblingsbücher</div>
+        <div id="favorites-grid" class="fav-grid">
+          <div class="empty" id="favorites-empty">
+            <div class="empty-icon">⭐</div>
+            <p>Noch keine Favoriten gespeichert.</p>
+            <p class="empty-hint">Klick auf ein Buch und markiere es als Favorit!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: ENTDECKEN -->
+      <div id="tab-entdecken" class="tab-content">
+        <div class="slbl">Neue Bücher deiner Autoren</div>
+        <div id="new-releases-list" class="hscroll">
+          <p class="disc-empty">Wird geladen …</p>
+        </div>
+
+        <div class="slbl" style="margin-top:28px">Empfehlungen für dich</div>
+        <p class="disc-hint" id="suggestions-hint">Basierend auf deinen Lieblingsgenres</p>
+        <div class="genre-select-wrap">
+          <select id="genre-select" class="genre-select" onchange="onGenreSelectChange(this.value)">
+            <option value="">✨ Für dich (nach Bewertungen)</option>
+          </select>
+        </div>
+        <div id="suggestions-list" class="hscroll">
+          <p class="disc-empty">Wird geladen …</p>
+        </div>
+      </div>
+
+      <!-- TAB: MERKLISTE -->
+      <div id="tab-merkliste" class="tab-content">
+        <div class="slbl">Bücher die ich kaufen möchte</div>
+        <div id="wish-list"></div>
+      </div>
+
+      <!-- TAB: STATISTIK -->
+      <div id="tab-statistik" class="tab-content">
+        <div class="slbl">Meine Leseübersicht</div>
+        <div id="stats-overview" class="stats-overview"></div>
+        <div class="slbl" style="margin-top:24px">Bücher nach Jahr</div>
+        <p class="disc-hint" id="stats-hint">Bewerte Bücher und weise ihnen ein Jahr zu!</p>
+        <div id="stats-timeline" class="stats-timeline"></div>
+
+        <div class="slbl" style="margin-top:36px">Datensicherung</div>
+        <div class="stats-io-row">
+          <button class="stats-io-btn stats-io-export" onclick="exportData()">
+            <span class="io-icon">🍂</span>
+            <span class="io-label">Exportieren</span>
+            <span class="io-hint">Backup erstellen</span>
+          </button>
+          <label class="stats-io-btn stats-io-import">
+            <span class="io-icon">🌿</span>
+            <span class="io-label">Importieren</span>
+            <span class="io-hint">Backup laden</span>
+            <input type="file" accept=".json" style="display:none" onchange="importData(event)">
+          </label>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Bottom Nav -->
+    <nav class="bnav">
+      <button class="bnav-btn nav-active" data-tab="autoren" onclick="switchTab('autoren')">
+        <span class="bnav-icon">🖊️</span><span>Autoren</span>
+      </button>
+      <button class="bnav-btn" data-tab="buecher" onclick="switchTab('buecher')">
+        <span class="bnav-icon">📖</span><span>Bücher</span>
+      </button>
+      <button class="bnav-btn" data-tab="favoriten" onclick="switchTab('favoriten')">
+        <span class="bnav-icon">⭐</span><span>Favoriten</span>
+      </button>
+      <button class="bnav-btn" data-tab="entdecken" onclick="switchTab('entdecken')">
+        <span class="bnav-icon">🔭</span><span>Entdecken</span>
+        <span id="new-badge" class="bnav-dot hidden"></span>
+      </button>
+      <button class="bnav-btn" data-tab="merkliste" onclick="switchTab('merkliste')">
+        <span class="bnav-icon">🛒</span><span>Merkliste</span>
+        <span id="wish-badge" class="bnav-count hidden"></span>
+      </button>
+      <button class="bnav-btn" data-tab="statistik" onclick="switchTab('statistik')">
+        <span class="bnav-icon">📊</span><span>Statistik</span>
+      </button>
+    </nav>
+
+  </div><!-- /app -->
+
+  <!-- ===== MODAL: BUCH BEARBEITEN ===== -->
+  <div id="modal-edit-book" class="modal-ov hidden" onclick="handleModalClick(event,'modal-edit-book')">
+    <div class="msheet">
+      <div class="m-handle"></div>
+      <h3 class="m-title" id="edit-modal-title">Buch <em>bearbeiten</em></h3>
+      <div class="m-book-desc hidden" id="edit-modal-desc"></div>
+
+      <div class="m-label">Wie fandest du dieses Buch?</div>
+      <div class="rating-opts">
+        <button class="rating-opt" data-r="liked"    onclick="pickRating('liked')">
+          <span class="r-emoji">💚</span><span class="r-lbl">Toll!</span>
+        </button>
+        <button class="rating-opt" data-r="neutral"  onclick="pickRating('neutral')">
+          <span class="r-emoji">😐</span><span class="r-lbl">Ok</span>
+        </button>
+        <button class="rating-opt" data-r="disliked" onclick="pickRating('disliked')">
+          <span class="r-emoji">❌</span><span class="r-lbl">Nicht meins</span>
+        </button>
+      </div>
+
+      <div class="m-label" style="margin-top:18px">Meine Notiz</div>
+      <textarea id="edit-note" class="dnote" rows="4"
+                placeholder="Was hat dir gefallen? Was nicht? Empfehlenswert?"></textarea>
+
+      <div class="m-label" style="margin-top:18px">Wann gelesen?</div>
+      <div class="year-picker" id="year-picker"></div>
+
+      <label class="fav-row">
+        <input type="checkbox" id="edit-favorite" class="fav-check">
+        <span>⭐ Zu meinen Favoriten</span>
+      </label>
+
+      <div class="m-actions">
+        <button class="m-cancel" onclick="closeEditBookModal()">Abbrechen</button>
+        <button class="m-save"   onclick="saveBookEdit()">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: BUCH DETAIL (Entdecken) ===== -->
+  <div id="modal-disc-detail" class="modal-ov hidden" onclick="handleModalClick(event,'modal-disc-detail')">
+    <div class="msheet">
+      <div class="m-handle"></div>
+      <div class="disc-detail-layout">
+        <div id="disc-detail-cover-wrap" class="disc-detail-cover-wrap"></div>
+        <div class="disc-detail-info">
+          <h3 class="m-title" id="disc-detail-title"></h3>
+          <div class="disc-detail-meta" id="disc-detail-author"></div>
+        </div>
+      </div>
+      <div class="m-book-desc" id="disc-detail-desc"></div>
+      <div id="disc-detail-actions" class="disc-detail-actions"></div>
+      <button class="disc-detail-btn-wish" id="disc-detail-wish">🛒 Auf Merkliste</button>
+    </div>
+  </div>
+
+  <!-- ===== UNDO TOAST ===== -->
+  <div id="delete-toast" class="delete-toast hidden">
+    <span><strong id="delete-toast-name"></strong> gelöscht</span>
+    <button onclick="undoDelete()">↩ Rückgängig</button>
+  </div>
+
+  <!-- ===== WISH TOAST ===== -->
+  <div id="wish-toast" class="wish-toast"></div>
+
+  <!-- ===== LOADING ===== -->
+  <div id="loading-overlay" class="loading-ov hidden">
+    <div class="spinner"></div>
+    <p id="loading-text">Wird geladen …</p>
+  </div>
+
+  <script src="firebase-config.js"></script>
+  <script src="app.js?v=28"></script>
+</body>
+</html>
