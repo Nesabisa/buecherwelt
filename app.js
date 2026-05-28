@@ -486,8 +486,9 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(s => s.classList.toggle('active', s.id===`tab-${tab}`));
   if (tab==='statistik') renderStatistik();
   if (tab==='merkliste') renderMerkliste();
-  if (tab==='entdecken' && Date.now() - _lastDiscoverLoad > DISCOVER_REFRESH_MS) {
-    loadDiscover();
+  if (tab==='entdecken') {
+    if (Date.now() - _lastDiscoverLoad > DISCOVER_REFRESH_MS) loadDiscover();
+    else renderDiscover();
   }
 }
 
@@ -1243,6 +1244,10 @@ async function saveBookEdit() {
   const wasExpanded = S.expandedBook ? {...S.expandedBook} : null;
   closeEditBookModal();
   renderAutoren(); renderAlleBuecher(); renderFavoriten(); renderStatistik(); renderGenreSelect();
+  // Nach einer Bewertung Empfehlungen still aktualisieren
+  if (updates.rating === 'liked' && !S.selectedDiscoverGenre) {
+    fetchGenreSuggestions(S.genreStats).then(books => { if (books.length) S.suggestions = books; }).catch(()=>{});
+  }
 
   // Restore expanded author + book detail without closing anything
   if (wasExpanded) {
