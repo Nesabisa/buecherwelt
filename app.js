@@ -1387,8 +1387,9 @@ function closeEditBookModal() {
 }
 
 function pickRating(r) {
-  S.selectedRating=r;
-  document.querySelectorAll('.rating-opt').forEach(b=>b.classList.toggle('selected',b.dataset.r===r));
+  // Nochmal auf dieselbe Bewertung klicken → Bewertung entfernen
+  S.selectedRating = S.selectedRating===r ? null : r;
+  document.querySelectorAll('.rating-opt').forEach(b=>b.classList.toggle('selected',b.dataset.r===S.selectedRating));
 }
 
 async function saveBookEdit() {
