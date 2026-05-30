@@ -729,31 +729,41 @@ async function toggleBookExpand(authorId, bookId) {
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
     } catch {}
-    // 2. Fetch original year from Open Library via author search + title word overlap
-    // Strategy: search by author (cross-language), match results by shared title words
-    // This works even when German title ≠ English/Japanese title in OL database
+    // 2. Fetch original year from Open Library (two-stage, avoids false matches)
     try {
+      const deaccent = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'');
+      const lastName  = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
       const authorName = author?.name || book.authors?.[0] || '';
-      const olResp = await fetch(
-        `https://openlibrary.org/search.json?author=${encodeURIComponent(authorName)}&limit=30&fields=title,first_publish_year&sort=old`
+      const currYear  = new Date().getFullYear();
+
+      // Stage 1: direct title search (reliable for EN titles, OL knows them)
+      const r1 = await fetch(
+        `https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`
       );
-      const olData = await olResp.json();
-      // Key words from stored title — normalize to NFC + strip accents for robust matching
-      // (handles Unicode NFC/NFD differences between stored title and OL response)
-      const deaccent = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').normalize('NFC');
-      const titleWords = new Set(
-        deaccent(book.title.toLowerCase()).split(/\s+/).filter(w => w.length >= 4)
-      );
-      const currYear = new Date().getFullYear();
-      const years = (olData.docs||[])
-        .filter(d => {
-          const olWords = deaccent((d.title||'').toLowerCase()).split(/\s+/);
-          return olWords.some(w => titleWords.has(w));
-        })
-        .map(d => d.first_publish_year)
-        .filter(y => y && y > 1800 && y <= currYear);
-      if (years.length) {
-        const origYear = Math.min(...years);
+      const d1 = await r1.json();
+      let olYears = (d1.docs||[]).map(d=>d.first_publish_year).filter(y=>y&&y>1800&&y<=currYear);
+
+      // Stage 2 fallback: author search + DISTINCTIVE word matching (≥7 chars only)
+      // Short words like "cafe", "before" appear in many books → false positives.
+      // Long words (≥7) like "solange", "schwestern" are unique enough to trust.
+      if (!olYears.length) {
+        const distinctWords = new Set(
+          deaccent(book.title.toLowerCase()).split(/\s+/).filter(w=>w.length>=7)
+        );
+        if (distinctWords.size > 0) {
+          const r2 = await fetch(
+            `https://openlibrary.org/search.json?author=${encodeURIComponent(authorName)}&limit=30&fields=title,first_publish_year&sort=old`
+          );
+          const d2 = await r2.json();
+          olYears = (d2.docs||[])
+            .filter(d => deaccent((d.title||'').toLowerCase()).split(/\s+/).some(w=>distinctWords.has(w)))
+            .map(d=>d.first_publish_year)
+            .filter(y=>y&&y>1800&&y<=currYear);
+        }
+      }
+
+      if (olYears.length) {
+        const origYear   = Math.min(...olYears);
         const displayYear = parseInt(book.year||'9999');
         if (origYear < displayYear) {
           const authorEl = container.querySelector('.expand-author');
