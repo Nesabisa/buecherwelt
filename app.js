@@ -729,20 +729,29 @@ async function toggleBookExpand(authorId, bookId) {
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
     } catch {}
-    // 2. Fetch original year from Open Library (optional — failure doesn't affect description)
-    // Use fetch() directly — fetchJson appends Google API key which breaks OL requests
+    // 2. Fetch original year from Open Library via author search + title word overlap
+    // Strategy: search by author (cross-language), match results by shared title words
+    // This works even when German title ≠ English/Japanese title in OL database
     try {
-      const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
+      const authorName = author?.name || book.authors?.[0] || '';
       const olResp = await fetch(
-        `https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`
+        `https://openlibrary.org/search.json?author=${encodeURIComponent(authorName)}&limit=30&fields=title,first_publish_year&sort=old`
       );
       const olData = await olResp.json();
+      // Key words from stored title (length >= 4, case-insensitive, keep special chars like é ü ö)
+      const titleWords = new Set(
+        book.title.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
+      );
       const currYear = new Date().getFullYear();
-      const olYears = (olData.docs||[])
+      const years = (olData.docs||[])
+        .filter(d => {
+          const olWords = (d.title||'').toLowerCase().split(/\s+/);
+          return olWords.some(w => titleWords.has(w));
+        })
         .map(d => d.first_publish_year)
         .filter(y => y && y > 1800 && y <= currYear);
-      if (olYears.length) {
-        const origYear = Math.min(...olYears);
+      if (years.length) {
+        const origYear = Math.min(...years);
         const displayYear = parseInt(book.year||'9999');
         if (origYear < displayYear) {
           const authorEl = container.querySelector('.expand-author');
