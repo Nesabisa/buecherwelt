@@ -718,15 +718,9 @@ async function toggleBookExpand(authorId, bookId) {
   container.innerHTML = renderBookExpand(book, author?.name||'');
   container.scrollIntoView({behavior:'smooth',block:'nearest'});
   if (book.googleId) {
+    // 1. Fetch full description (critical — runs independently)
     try {
-      // Fetch description + Open Library original year in parallel
-      // Open Library tracks first_publish_year across ALL languages/editions
-      const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
-      const [detailData, olData] = await Promise.all([
-        fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`),
-        fetchJson(`https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`),
-      ]);
-      // Update description
+      const detailData = await fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`);
       const desc = stripHtml(detailData.volumeInfo?.description||'');
       if (desc && desc !== book.description) {
         book.description = desc;
@@ -734,7 +728,13 @@ async function toggleBookExpand(authorId, bookId) {
         const descEl = container.querySelector('.expand-description-wrap');
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
-      // Show original publication year from Open Library (cross-language)
+    } catch {}
+    // 2. Fetch original year from Open Library (optional — failure doesn't affect description)
+    try {
+      const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
+      const olData = await fetchJson(
+        `https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`
+      );
       const currYear = new Date().getFullYear();
       const olYears = (olData.docs||[])
         .map(d => d.first_publish_year)
