@@ -689,7 +689,9 @@ function toggleAuthor(id) { document.getElementById(`author-${id}`)?.classList.t
 function renderBooksGrid(books, authorId) {
   const author = S.authors.find(a => a.id === authorId);
   const lang = author?.lang || 'de';
-  books = dedupeBooks(books).filter(b => !b.language || b.language === lang);
+  books = dedupeBooks(books)
+    .filter(b => !b.language || b.language === lang)
+    .sort((a, b) => parseInt(b.year || 0) - parseInt(a.year || 0));
   if (!books.length) return `<p style="color:var(--tl);font-size:13px;padding:8px 0;grid-column:1/-1;font-family:'Cormorant Garamond',serif;font-style:italic">Kein Buch gefunden.</p>`;
   return books.map(book => {
     const badge   = book.rating ? `<div class="book-rating-badge">${ratingEmoji(book.rating)}</div>` : '';
