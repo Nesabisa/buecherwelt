@@ -718,13 +718,13 @@ async function toggleBookExpand(authorId, bookId) {
   container.innerHTML = renderBookExpand(book, author?.name||'');
   container.scrollIntoView({behavior:'smooth',block:'nearest'});
   if (book.googleId) {
-    // Fetch full description and original publication year in parallel
     try {
-      // Use last name only for inauthor — more reliable for non-Western names
+      // Fetch description + Open Library original year in parallel
+      // Open Library tracks first_publish_year across ALL languages/editions
       const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
-      const [detailData, origData] = await Promise.all([
+      const [detailData, olData] = await Promise.all([
         fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`),
-        fetchJson(`${API}?q=intitle:${encodeURIComponent('"'+book.title+'"')}+inauthor:${encodeURIComponent(lastName)}&orderBy=oldest&maxResults=10&fields=items(volumeInfo(title,publishedDate))`),
+        fetchJson(`https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`),
       ]);
       // Update description
       const desc = stripHtml(detailData.volumeInfo?.description||'');
@@ -734,15 +734,13 @@ async function toggleBookExpand(authorId, bookId) {
         const descEl = container.querySelector('.expand-description-wrap');
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
-      // Show original publication year if earlier than stored year
-      // Use lenient title match: one title starts with the other (handles subtitles)
-      const nt = normTitle(book.title);
-      const years = (origData.items||[])
-        .filter(i => { const t = normTitle(i.volumeInfo?.title||''); return t===nt || t.startsWith(nt) || nt.startsWith(t); })
-        .map(i => parseInt((i.volumeInfo?.publishedDate||'').slice(0,4)))
-        .filter(y => y > 1800 && y <= new Date().getFullYear());
-      if (years.length) {
-        const origYear = Math.min(...years);
+      // Show original publication year from Open Library (cross-language)
+      const currYear = new Date().getFullYear();
+      const olYears = (olData.docs||[])
+        .map(d => d.first_publish_year)
+        .filter(y => y && y > 1800 && y <= currYear);
+      if (olYears.length) {
+        const origYear = Math.min(...olYears);
         const displayYear = parseInt(book.year||'9999');
         if (origYear < displayYear) {
           const authorEl = container.querySelector('.expand-author');
