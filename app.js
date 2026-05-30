@@ -729,47 +729,46 @@ async function toggleBookExpand(authorId, bookId) {
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
     } catch {}
-    // 2. Find original publication year using the same normTitle logic as deduplication
-    // Search Google Books cross-language (no langRestrict) ordered oldest-first,
-    // then match editions of the same book by normalised title — same approach as dedup.
-    // Fallback: Open Library title search (good for EN titles OL indexes well).
-    try {
-      const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
-      const currYear = new Date().getFullYear();
-      const nt       = normTitle(book.title);
+    // 2. Original year via Wikipedia (cached in Firebase so API only called once per book)
+    if (book.origYear === undefined) {
+      try {
+        const currYear = new Date().getFullYear();
+        const lang     = author?.lang || 'de';
+        let origYear   = null;
 
-      // Google Books: oldest editions of this title across all languages
-      const gbData = await fetchJson(
-        `${API}?q=intitle:${encodeURIComponent('"'+book.title+'"')}+inauthor:${encodeURIComponent(lastName)}&orderBy=oldest&maxResults=40&fields=items(volumeInfo(title,publishedDate))`
-      );
-      const gbYears = (gbData.items||[])
-        .filter(i => {
-          const t = normTitle(i.volumeInfo?.title||'');
-          return t===nt || t.startsWith(nt) || nt.startsWith(t);
-        })
-        .map(i => parseInt((i.volumeInfo?.publishedDate||'').slice(0,4)))
-        .filter(y => y>1800 && y<=currYear);
+        // Helper: fetch Wikipedia intro extract and pull first plausible year
+        const wikiYear = async (wikiLang, title) => {
+          const r = await fetch(
+            `https://${wikiLang}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=true&redirects=1&titles=${encodeURIComponent(title)}&format=json&origin=*&exchars=600`
+          );
+          const d = await r.json();
+          const page = Object.values(d.query?.pages||{})[0];
+          if (!page || page.missing !== undefined) return null;
+          const extract = page.extract?.replace(/<[^>]+>/g,'') || '';
+          const m = extract.match(/\b(1[89]\d\d|20[012]\d)\b/);
+          return m ? parseInt(m[1]) : null;
+        };
 
-      // Open Library: direct title search (good for EN books)
-      const olResp = await fetch(
-        `https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`
-      );
-      const olData = await olResp.json();
-      const olYears = (olData.docs||[])
-        .map(d=>d.first_publish_year)
-        .filter(y=>y&&y>1800&&y<=currYear);
+        // Try DE Wikipedia first, then EN
+        origYear = await wikiYear('de', book.title);
+        if (!origYear) origYear = await wikiYear('en', book.title);
 
-      const allYears = [...gbYears, ...olYears];
-      if (allYears.length) {
-        const origYear    = Math.min(...allYears);
-        const displayYear = parseInt(book.year||'9999');
-        if (origYear < displayYear) {
+        // Cache result on book (null = checked, no data; skip undefined = never checked)
+        book.origYear = origYear || null;
+        updateBook(book.id, { origYear: book.origYear });
+
+        if (origYear && origYear < parseInt(book.year||'9999')) {
           const authorEl = container.querySelector('.expand-author');
           if (authorEl) authorEl.innerHTML =
             `${esc(author?.name||'')}${book.year?' · '+book.year:''} <span class="expand-orig-year">(Erstmals ${origYear})</span>`;
         }
-      }
-    } catch {}
+      } catch {}
+    } else if (book.origYear && book.origYear < parseInt(book.year||'9999')) {
+      // Already cached — just show it
+      const authorEl = container.querySelector('.expand-author');
+      if (authorEl) authorEl.innerHTML =
+        `${esc(author?.name||'')}${book.year?' · '+book.year:''} <span class="expand-orig-year">(Erstmals ${book.origYear})</span>`;
+    }
   }
 }
 
