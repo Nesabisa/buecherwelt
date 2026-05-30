@@ -718,7 +718,7 @@ async function toggleBookExpand(authorId, bookId) {
   container.innerHTML = renderBookExpand(book, author?.name||'');
   container.scrollIntoView({behavior:'smooth',block:'nearest'});
   if (book.googleId) {
-    // 1. Fetch full description (critical — runs independently)
+    // Fetch full description
     try {
       const detailData = await fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`);
       const desc = stripHtml(detailData.volumeInfo?.description||'');
@@ -729,46 +729,6 @@ async function toggleBookExpand(authorId, bookId) {
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
     } catch {}
-    // 2. Original year via Wikipedia (cached in Firebase so API only called once per book)
-    if (book.origYear === undefined) {
-      try {
-        const currYear = new Date().getFullYear();
-        const lang     = author?.lang || 'de';
-        let origYear   = null;
-
-        // Helper: fetch Wikipedia intro extract and pull first plausible year
-        const wikiYear = async (wikiLang, title) => {
-          const r = await fetch(
-            `https://${wikiLang}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=true&redirects=1&titles=${encodeURIComponent(title)}&format=json&origin=*&exchars=600`
-          );
-          const d = await r.json();
-          const page = Object.values(d.query?.pages||{})[0];
-          if (!page || page.missing !== undefined) return null;
-          const extract = page.extract?.replace(/<[^>]+>/g,'') || '';
-          const m = extract.match(/\b(1[89]\d\d|20[012]\d)\b/);
-          return m ? parseInt(m[1]) : null;
-        };
-
-        // Try DE Wikipedia first, then EN
-        origYear = await wikiYear('de', book.title);
-        if (!origYear) origYear = await wikiYear('en', book.title);
-
-        // Cache result on book (null = checked, no data; skip undefined = never checked)
-        book.origYear = origYear || null;
-        updateBook(book.id, { origYear: book.origYear });
-
-        if (origYear && origYear < parseInt(book.year||'9999')) {
-          const authorEl = container.querySelector('.expand-author');
-          if (authorEl) authorEl.innerHTML =
-            `${esc(author?.name||'')}${book.year?' · '+book.year:''} <span class="expand-orig-year">(Erstmals ${origYear})</span>`;
-        }
-      } catch {}
-    } else if (book.origYear && book.origYear < parseInt(book.year||'9999')) {
-      // Already cached — just show it
-      const authorEl = container.querySelector('.expand-author');
-      if (authorEl) authorEl.innerHTML =
-        `${esc(author?.name||'')}${book.year?' · '+book.year:''} <span class="expand-orig-year">(Erstmals ${book.origYear})</span>`;
-    }
   }
 }
 
