@@ -718,15 +718,47 @@ async function toggleBookExpand(authorId, bookId) {
   container.innerHTML = renderBookExpand(book, author?.name||'');
   container.scrollIntoView({behavior:'smooth',block:'nearest'});
   if (book.googleId) {
-    // Fetch full description
+    // Fetch description + ISBN in one call
     try {
-      const detailData = await fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`);
+      const detailData = await fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description,industryIdentifiers)`);
+      // Update description
       const desc = stripHtml(detailData.volumeInfo?.description||'');
       if (desc && desc !== book.description) {
         book.description = desc;
         updateBook(bookId, {description: desc});
         const descEl = container.querySelector('.expand-description-wrap');
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
+      }
+      // Original year via ISBN → Open Library (cached so API runs once per book)
+      if (book.origYear === undefined) {
+        const ids  = detailData.volumeInfo?.industryIdentifiers || [];
+        const isbn = (ids.find(i=>i.type==='ISBN_13')||ids.find(i=>i.type==='ISBN_10'))?.identifier;
+        const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
+        const currYear = new Date().getFullYear();
+        let origYear   = null;
+        try {
+          // Search OL by ISBN (most precise) then by title+author as fallback
+          const queries = isbn
+            ? [`isbn=${encodeURIComponent(isbn)}`, `title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}`]
+            : [`title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}`];
+          for (const q of queries) {
+            const r  = await fetch(`https://openlibrary.org/search.json?${q}&limit=3&fields=first_publish_year`);
+            const d  = await r.json();
+            const yr = Math.min(...(d.docs||[]).map(x=>x.first_publish_year).filter(y=>y&&y>1800&&y<=currYear));
+            if (isFinite(yr)) { origYear = yr; break; }
+          }
+        } catch {}
+        book.origYear = origYear || null;
+        updateBook(book.id, {origYear: book.origYear});
+        if (origYear && origYear < parseInt(book.year||'9999')) {
+          const authorEl = container.querySelector('.expand-author');
+          if (authorEl) authorEl.innerHTML =
+            `${esc(author?.name||'')}${book.year?' · '+book.year:''} <span class="expand-orig-year">(Erstmals ${origYear})</span>`;
+        }
+      } else if (book.origYear && book.origYear < parseInt(book.year||'9999')) {
+        const authorEl = container.querySelector('.expand-author');
+        if (authorEl) authorEl.innerHTML =
+          `${esc(author?.name||'')}${book.year?' · '+book.year:''} <span class="expand-orig-year">(Erstmals ${book.origYear})</span>`;
       }
     } catch {}
   }
