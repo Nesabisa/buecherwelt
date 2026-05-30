@@ -738,14 +738,16 @@ async function toggleBookExpand(authorId, bookId) {
         `https://openlibrary.org/search.json?author=${encodeURIComponent(authorName)}&limit=30&fields=title,first_publish_year&sort=old`
       );
       const olData = await olResp.json();
-      // Key words from stored title (length >= 4, case-insensitive, keep special chars like é ü ö)
+      // Key words from stored title — normalize to NFC + strip accents for robust matching
+      // (handles Unicode NFC/NFD differences between stored title and OL response)
+      const deaccent = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').normalize('NFC');
       const titleWords = new Set(
-        book.title.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
+        deaccent(book.title.toLowerCase()).split(/\s+/).filter(w => w.length >= 4)
       );
       const currYear = new Date().getFullYear();
       const years = (olData.docs||[])
         .filter(d => {
-          const olWords = (d.title||'').toLowerCase().split(/\s+/);
+          const olWords = deaccent((d.title||'').toLowerCase()).split(/\s+/);
           return olWords.some(w => titleWords.has(w));
         })
         .map(d => d.first_publish_year)
