@@ -730,11 +730,13 @@ async function toggleBookExpand(authorId, bookId) {
       }
     } catch {}
     // 2. Fetch original year from Open Library (optional — failure doesn't affect description)
+    // Use fetch() directly — fetchJson appends Google API key which breaks OL requests
     try {
       const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
-      const olData = await fetchJson(
+      const olResp = await fetch(
         `https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`
       );
+      const olData = await olResp.json();
       const currYear = new Date().getFullYear();
       const olYears = (olData.docs||[])
         .map(d => d.first_publish_year)
