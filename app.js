@@ -709,7 +709,7 @@ function renderBooksGrid(books, authorId) {
 
 async function toggleBookExpand(authorId, bookId) {
   const container = document.getElementById(`expand-${authorId}`);
-  if (S.expandedBook?.bookId===bookId) { openEditBookModal(authorId,bookId); return; }
+  if (S.expandedBook?.bookId===bookId) { closeBookExpand(authorId); return; }
   S.expandedBook = {authorId,bookId};
   document.querySelectorAll(`#grid-${authorId} .book-card`).forEach(c => c.classList.toggle('expanded-active', c.id===`bc-${bookId}`));
   const book   = getBook(authorId,bookId);
@@ -718,15 +718,34 @@ async function toggleBookExpand(authorId, bookId) {
   container.innerHTML = renderBookExpand(book, author?.name||'');
   container.scrollIntoView({behavior:'smooth',block:'nearest'});
   if (book.googleId) {
-    // Always fetch full description (cached version may be truncated)
+    // Fetch full description and original publication year in parallel
     try {
-      const data = await fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`);
-      const desc = stripHtml(data.volumeInfo?.description||'');
+      const [detailData, origData] = await Promise.all([
+        fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`),
+        fetchJson(`${API}?q=intitle:${encodeURIComponent('"'+book.title+'"')}+inauthor:${encodeURIComponent('"'+(book.authors?.[0]||author?.name||'')+'"')}&orderBy=oldest&maxResults=10&fields=items(volumeInfo(title,publishedDate))`),
+      ]);
+      // Update description
+      const desc = stripHtml(detailData.volumeInfo?.description||'');
       if (desc && desc !== book.description) {
         book.description = desc;
         updateBook(bookId, {description: desc});
         const descEl = container.querySelector('.expand-description-wrap');
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
+      }
+      // Show original publication year if earlier than stored year
+      const nt = normTitle(book.title);
+      const years = (origData.items||[])
+        .filter(i => normTitle(i.volumeInfo?.title||'') === nt)
+        .map(i => parseInt((i.volumeInfo?.publishedDate||'').slice(0,4)))
+        .filter(y => y > 1800 && y <= new Date().getFullYear());
+      if (years.length) {
+        const origYear = Math.min(...years);
+        const displayYear = parseInt(book.year||'9999');
+        if (origYear < displayYear) {
+          const authorEl = container.querySelector('.expand-author');
+          if (authorEl) authorEl.innerHTML =
+            `${esc(author?.name||'')}${book.year?' · '+book.year:''} <span class="expand-orig-year">(Erstmals ${origYear})</span>`;
+        }
       }
     } catch {}
   }
@@ -748,7 +767,7 @@ function renderBookExpand(book, authorName) {
     <div class="expand-author">${esc(authorName)}${book.year?' · '+book.year:''}</div>
     <div class="expand-description-wrap">${descContent}</div>
     ${emoji ? `<div class="expand-rating"><span class="expand-emoji">${emoji}</span><span class="expand-rating-text">${label}</span></div>`
-            : `<div class="expand-rating"><span class="expand-rating-text">Noch nicht bewertet – klick nochmal zum Bearbeiten!</span></div>`}
+            : `<div class="expand-rating"><span class="expand-rating-text">Noch nicht bewertet</span></div>`}
     ${book.note ? `<div class="expand-note">${esc(book.note)}</div>`
                 : `<div class="expand-note expand-note-empty">Noch keine Notiz.</div>`}
     <div class="expand-actions">
@@ -847,7 +866,7 @@ async function lazyLoadListDescription(authorId, bookId, item) {
 function toggleListExpand(authorId, bookId) {
   const item = document.getElementById(`li-${bookId}`);
   if (!item) return;
-  if (item.classList.contains('expanded')) { openEditBookModal(authorId,bookId); return; }
+  if (item.classList.contains('expanded')) { item.classList.remove('expanded'); return; }
   document.querySelectorAll('.book-list-item.expanded').forEach(i=>i.classList.remove('expanded'));
   item.classList.add('expanded');
 }

@@ -146,6 +146,7 @@ em{font-style:italic;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
 .expand-title{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:400;color:var(--text);margin-bottom:2px;}
 .expand-author{font-size:12px;color:var(--tl);margin-bottom:12px;}
+.expand-orig-year{font-size:11px;color:var(--tl);opacity:.75;font-style:italic;}
 .expand-rating{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
 .expand-emoji{font-size:24px;}
 .expand-rating-text{font-size:13px;color:var(--tl);}
