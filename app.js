@@ -720,9 +720,11 @@ async function toggleBookExpand(authorId, bookId) {
   if (book.googleId) {
     // Fetch full description and original publication year in parallel
     try {
+      // Use last name only for inauthor — more reliable for non-Western names
+      const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
       const [detailData, origData] = await Promise.all([
         fetchJson(`${API}/${book.googleId}?fields=volumeInfo(description)`),
-        fetchJson(`${API}?q=intitle:${encodeURIComponent('"'+book.title+'"')}+inauthor:${encodeURIComponent('"'+(book.authors?.[0]||author?.name||'')+'"')}&orderBy=oldest&maxResults=10&fields=items(volumeInfo(title,publishedDate))`),
+        fetchJson(`${API}?q=intitle:${encodeURIComponent('"'+book.title+'"')}+inauthor:${encodeURIComponent(lastName)}&orderBy=oldest&maxResults=10&fields=items(volumeInfo(title,publishedDate))`),
       ]);
       // Update description
       const desc = stripHtml(detailData.volumeInfo?.description||'');
@@ -733,9 +735,10 @@ async function toggleBookExpand(authorId, bookId) {
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
       // Show original publication year if earlier than stored year
+      // Use lenient title match: one title starts with the other (handles subtitles)
       const nt = normTitle(book.title);
       const years = (origData.items||[])
-        .filter(i => normTitle(i.volumeInfo?.title||'') === nt)
+        .filter(i => { const t = normTitle(i.volumeInfo?.title||''); return t===nt || t.startsWith(nt) || nt.startsWith(t); })
         .map(i => parseInt((i.volumeInfo?.publishedDate||'').slice(0,4)))
         .filter(y => y > 1800 && y <= new Date().getFullYear());
       if (years.length) {
