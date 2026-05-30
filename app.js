@@ -729,41 +729,39 @@ async function toggleBookExpand(authorId, bookId) {
         if (descEl) descEl.innerHTML = `<div class="expand-description">${esc(desc)}</div>`;
       }
     } catch {}
-    // 2. Fetch original year from Open Library (two-stage, avoids false matches)
+    // 2. Find original publication year using the same normTitle logic as deduplication
+    // Search Google Books cross-language (no langRestrict) ordered oldest-first,
+    // then match editions of the same book by normalised title — same approach as dedup.
+    // Fallback: Open Library title search (good for EN titles OL indexes well).
     try {
-      const deaccent = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'');
-      const lastName  = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
-      const authorName = author?.name || book.authors?.[0] || '';
-      const currYear  = new Date().getFullYear();
+      const lastName = (book.authors?.[0]||author?.name||'').split(' ').slice(-1)[0];
+      const currYear = new Date().getFullYear();
+      const nt       = normTitle(book.title);
 
-      // Stage 1: direct title search (reliable for EN titles, OL knows them)
-      const r1 = await fetch(
+      // Google Books: oldest editions of this title across all languages
+      const gbData = await fetchJson(
+        `${API}?q=intitle:${encodeURIComponent('"'+book.title+'"')}+inauthor:${encodeURIComponent(lastName)}&orderBy=oldest&maxResults=40&fields=items(volumeInfo(title,publishedDate))`
+      );
+      const gbYears = (gbData.items||[])
+        .filter(i => {
+          const t = normTitle(i.volumeInfo?.title||'');
+          return t===nt || t.startsWith(nt) || nt.startsWith(t);
+        })
+        .map(i => parseInt((i.volumeInfo?.publishedDate||'').slice(0,4)))
+        .filter(y => y>1800 && y<=currYear);
+
+      // Open Library: direct title search (good for EN books)
+      const olResp = await fetch(
         `https://openlibrary.org/search.json?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(lastName)}&limit=5&fields=title,first_publish_year`
       );
-      const d1 = await r1.json();
-      let olYears = (d1.docs||[]).map(d=>d.first_publish_year).filter(y=>y&&y>1800&&y<=currYear);
+      const olData = await olResp.json();
+      const olYears = (olData.docs||[])
+        .map(d=>d.first_publish_year)
+        .filter(y=>y&&y>1800&&y<=currYear);
 
-      // Stage 2 fallback: author search + DISTINCTIVE word matching (≥7 chars only)
-      // Short words like "cafe", "before" appear in many books → false positives.
-      // Long words (≥7) like "solange", "schwestern" are unique enough to trust.
-      if (!olYears.length) {
-        const distinctWords = new Set(
-          deaccent(book.title.toLowerCase()).split(/\s+/).filter(w=>w.length>=7)
-        );
-        if (distinctWords.size > 0) {
-          const r2 = await fetch(
-            `https://openlibrary.org/search.json?author=${encodeURIComponent(authorName)}&limit=30&fields=title,first_publish_year&sort=old`
-          );
-          const d2 = await r2.json();
-          olYears = (d2.docs||[])
-            .filter(d => deaccent((d.title||'').toLowerCase()).split(/\s+/).some(w=>distinctWords.has(w)))
-            .map(d=>d.first_publish_year)
-            .filter(y=>y&&y>1800&&y<=currYear);
-        }
-      }
-
-      if (olYears.length) {
-        const origYear   = Math.min(...olYears);
+      const allYears = [...gbYears, ...olYears];
+      if (allYears.length) {
+        const origYear    = Math.min(...allYears);
         const displayYear = parseInt(book.year||'9999');
         if (origYear < displayYear) {
           const authorEl = container.querySelector('.expand-author');
