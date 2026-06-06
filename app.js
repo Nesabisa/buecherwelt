@@ -221,7 +221,7 @@ function hideDeleteToast() {
 /* ===== AUTO-UPDATE =====
    URL-redirect instead of reload() — forces iOS WKWebView to bypass cache.
    localStorage guard prevents redirect loop (at most one redirect per version). */
-const APP_VERSION = 68;
+const APP_VERSION = 69;
 (async () => {
   try {
     const r = await fetch(`version.json?t=${Date.now()}`);
@@ -891,10 +891,25 @@ function renderAlleBuecher() {
   let all = [];
   S.authors.forEach(a => {
     const lang = a.lang || 'de';
-    dedupeBooks(S.books[a.id]||[])
-      .filter(b => b.rating || !b.language || b.language === lang)
+    const authorBooks = dedupeBooks(S.books[a.id]||[]);
+    // Preferred-language books for this author
+    const preferred = new Set(authorBooks.filter(b => !b.language || b.language === lang).map(b => normTitle(b.title)));
+    authorBooks
+      .filter(b => {
+        if (!b.language || b.language === lang) return true;       // right language
+        if (b.rating && !preferred.has(normTitle(b.title))) return true; // rated & no preferred-lang version exists
+        return false;
+      })
       .forEach(b => all.push({...b, _authorName: a.name}));
   });
+  // Global dedup: remove same-title duplicates across authors/languages, prefer rated then preferred-lang
+  const globalSeen = new Map();
+  all.forEach(b => {
+    const k = normTitle(b.title);
+    const ex = globalSeen.get(k);
+    if (!ex || (b.rating && !ex.rating)) globalSeen.set(k, b);
+  });
+  all = [...globalSeen.values()];
   if (S.bookFilter==='gelesen')   all = all.filter(b=>b.rating);
   if (S.bookFilter==='favoriten') all = all.filter(b=>b.isFavorite);
   all.sort((a,b) => { if(b.isFavorite!==a.isFavorite) return b.isFavorite?1:-1; if(!!b.rating!==!!a.rating) return b.rating?1:-1; return a._authorName.localeCompare(b._authorName); });
