@@ -672,6 +672,14 @@ function handleModalClick(e, modalId) {
 }
 
 async function addAuthor(name, imgUrl) {
+  // If author exists as hidden (added via +Buch), make them visible instead of skipping
+  const existingHidden = S.authors.find(a => a.hidden && a.name.toLowerCase()===name.toLowerCase());
+  if (existingHidden) {
+    existingHidden.hidden = false;
+    await col('authors').doc(existingHidden.id).update({ hidden: false });
+    renderAutoren(); renderAlleBuecher();
+    return;
+  }
   if (S.authors.some(a => a.name.toLowerCase()===name.toLowerCase())) return;
   clearInlineAuthorSearch();
   showLoading(`Bücher von ${name} werden geladen …`);
