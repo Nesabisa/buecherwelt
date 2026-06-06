@@ -903,6 +903,7 @@ function renderAlleBuecher() {
           <button class="btn-fav-toggle ${book.isFavorite?'is-fav':''} bl-fav">
             ${book.isFavorite?'⭐ Favorit':'☆ Favorit'}
           </button>
+          <button class="btn-wish bl-wish">🛒 Merken</button>
         </div>
       </div>
     </div>`;
@@ -914,6 +915,7 @@ function renderAlleBuecher() {
     const bookId   = item.dataset.bookId;
     if (e.target.closest('.bl-edit'))  { openEditBookModal(authorId, bookId); return; }
     if (e.target.closest('.bl-fav'))   { quickToggleFavorite(authorId, bookId); return; }
+    if (e.target.closest('.bl-wish'))  { addBookToWishlist(authorId, bookId); return; }
     if (e.target.closest('.book-list-row')) {
       if (item.classList.contains('expanded')) { item.classList.remove('expanded'); return; }
       document.querySelectorAll('.book-list-item.expanded').forEach(i=>i.classList.remove('expanded'));
@@ -1579,23 +1581,58 @@ function renderMerkliste() {
   }
   const sorted = [...S.wishlist].sort((a,b) => b.addedAt - a.addedAt);
   list.innerHTML = sorted.map(item => {
-    const authors = Array.isArray(item.authors) ? item.authors.join(', ') : (item.authors||'');
-    const cover   = item.coverId
+    const authors    = Array.isArray(item.authors) ? item.authors.join(', ') : (item.authors||'');
+    const cover      = item.coverId
       ? `<img class="wish-cover" src="${item.coverId}" alt="" loading="lazy">`
       : `<div class="wish-cover-ph">📖</div>`;
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(item.title+' '+authors+' kaufen')}`;
-    return `<div class="wish-item">
-      ${cover}
-      <div class="wish-info">
-        <div class="wish-title">${esc(item.title)}</div>
-        <div class="wish-author">${esc(authors)}${item.year?' · '+item.year:''}</div>
+    const searchUrl  = `https://www.google.com/search?q=${encodeURIComponent(item.title+' '+authors+' kaufen')}`;
+    const descHtml   = item.description
+      ? `<div class="bl-desc">${esc(item.description)}</div>`
+      : (item.googleId ? `<div class="bl-desc-loading">Beschreibung wird geladen …</div>` : '');
+    return `<div class="wish-item book-list-item" id="wl-${item.id}" data-wish-id="${item.id}" data-gid="${esc(item.googleId||'')}">
+      <div class="wish-row book-list-row">
+        ${cover}
+        <div class="wish-info">
+          <div class="wish-title">${esc(item.title)}</div>
+          <div class="wish-author">${esc(authors)}${item.year?' · '+item.year:''}</div>
+        </div>
+        <span class="book-expand-arrow">▼</span>
       </div>
-      <div class="wish-btns">
-        <a class="wish-buy" href="${searchUrl}" target="_blank" rel="noopener" title="Im Web suchen">🔍 Kaufen</a>
-        <button class="wish-del" data-id="${item.id}" onclick="removeFromWishlist(this.dataset.id)" title="Entfernen">✕</button>
+      <div class="book-list-expand wish-expand">
+        ${descHtml}
+        <div class="expand-actions">
+          <a class="wish-buy btn-edit" href="${searchUrl}" target="_blank" rel="noopener">🔍 Kaufen</a>
+          <button class="wish-del btn-secondary wl-del">✕ Entfernen</button>
+        </div>
       </div>
     </div>`;
   }).join('');
+
+  list.onclick = e => {
+    const item = e.target.closest('.wish-item');
+    if (!item) return;
+    if (e.target.closest('.wl-del')) { removeFromWishlist(item.dataset.wishId); return; }
+    if (e.target.closest('.wish-buy')) return; // let link through
+    if (e.target.closest('.wish-row')) {
+      if (item.classList.contains('expanded')) { item.classList.remove('expanded'); return; }
+      document.querySelectorAll('.wish-item.expanded').forEach(i => i.classList.remove('expanded'));
+      item.classList.add('expanded');
+      // Lazy-load description
+      const gid = item.dataset.gid;
+      const wishId = item.dataset.wishId;
+      const wItem = S.wishlist.find(w => w.id === wishId);
+      if (gid && wItem && !wItem.description) {
+        fetchJson(`${API}/${gid}?fields=volumeInfo(description)`).then(data => {
+          const desc = stripHtml(data.volumeInfo?.description||'');
+          if (desc) {
+            wItem.description = desc;
+            const loadEl = item.querySelector('.bl-desc-loading');
+            if (loadEl) loadEl.outerHTML = `<div class="bl-desc">${esc(desc)}</div>`;
+          }
+        }).catch(()=>{});
+      }
+    }
+  };
 }
 
 /* ===== STATISTIK ===== */
