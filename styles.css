@@ -157,6 +157,8 @@ em{font-style:italic;}
 .btn-fav-toggle:hover,.btn-fav-toggle.is-fav{background:var(--amber);color:#fff;border-color:var(--amber);}
 .btn-secondary{background:none;border:1.5px solid var(--border);color:var(--tl);border-radius:9px;padding:6px 12px;font-size:13px;cursor:pointer;font-family:'Jost',sans-serif;transition:all .15s;}
 .btn-secondary:hover{border-color:var(--rose);color:var(--rd);}
+.btn-remove{background:none;border:1.5px solid #e0a0a0;color:#c0392b;border-radius:9px;padding:6px 12px;font-size:13px;cursor:pointer;font-family:'Jost',sans-serif;transition:all .15s;}
+.btn-remove:hover{background:#fdf0f0;}
 
 /* ===== BOOK LIST ===== */
 .book-list-item{background:var(--white);border:1px solid var(--border);border-left:3.5px solid var(--border);border-radius:14px;margin-bottom:7px;overflow:hidden;transition:box-shadow .15s;}

@@ -930,7 +930,7 @@ function renderAlleBuecher() {
             ${book.isFavorite?'⭐ Favorit':'☆ Favorit'}
           </button>
           <button class="btn-wish bl-wish">🛒 Merken</button>
-          <button class="btn-secondary bl-hide">✕ Aus Liste</button>
+          <button class="btn-remove bl-hide">✕ Aus Liste entfernen</button>
         </div>
       </div>
     </div>`;
@@ -1668,10 +1668,22 @@ function renderStatistik() {
   const hintEl     = document.getElementById('stats-hint');
   if (!overviewEl || !timelineEl) return;
 
-  const allBooks = [];
-  S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => {
-    if (b.rating) allBooks.push({...b, _authorName: a.name});
-  }));
+  // Same dedup logic as renderAlleBuecher: global by normTitle, prefer rated
+  const _statMap = new Map();
+  S.authors.forEach(a => {
+    const lang = a.lang || 'de';
+    const authorBooks = dedupeBooks(S.books[a.id]||[]).filter(b => !b.hiddenFromList);
+    const preferred = new Set(authorBooks.filter(b => !b.language || b.language === lang).map(b => normTitle(b.title)));
+    authorBooks
+      .filter(b => !b.language || b.language === lang || (b.rating && !preferred.has(normTitle(b.title))))
+      .forEach(b => {
+        if (!b.rating) return;
+        const k = normTitle(b.title);
+        const ex = _statMap.get(k);
+        if (!ex || (b.rating && !ex.rating)) _statMap.set(k, {...b, _authorName: a.name});
+      });
+  });
+  const allBooks = [..._statMap.values()];
 
   const total    = allBooks.length;
   const favs     = allBooks.filter(b=>b.isFavorite).length;
