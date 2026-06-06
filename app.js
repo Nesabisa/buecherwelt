@@ -219,16 +219,16 @@ function hideDeleteToast() {
 
 
 /* ===== AUTO-UPDATE =====
-   localStorage guard: reload at most once per remote version.
-   localStorage persists across reloads — unlike sessionStorage on iOS. */
-const APP_VERSION = 66;
+   URL-redirect instead of reload() — forces iOS WKWebView to bypass cache.
+   localStorage guard prevents redirect loop (at most one redirect per version). */
+const APP_VERSION = 67;
 (async () => {
   try {
     const r = await fetch(`version.json?t=${Date.now()}`);
     const { v } = await r.json();
     if (v && v !== APP_VERSION && !localStorage.getItem(`bw_tried_v${v}`)) {
       localStorage.setItem(`bw_tried_v${v}`, '1');
-      location.reload(true);
+      location.href = location.href.split('?')[0] + '?_v=' + v;
     }
   } catch {}
 })();
