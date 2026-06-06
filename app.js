@@ -216,14 +216,18 @@ function hideDeleteToast() {
 }
 
 /* ===== AUTO-UPDATE (iOS Home Screen) =====
-   Fetches version.json with a cache-busting timestamp so the
-   number is always fresh. If it differs from APP_VERSION → hard reload. */
-const APP_VERSION = 57;
+   Fetches version.json fresh each time. If version changed → reload once.
+   sessionStorage guard prevents infinite loop if CDN serves stale JS. */
+const APP_VERSION = 60;
 (async () => {
   try {
+    if (sessionStorage.getItem('bw_reloading')) { sessionStorage.removeItem('bw_reloading'); return; }
     const r = await fetch(`version.json?t=${Date.now()}`);
     const { v } = await r.json();
-    if (v && v !== APP_VERSION) location.reload(true);
+    if (v && v !== APP_VERSION) {
+      sessionStorage.setItem('bw_reloading', '1');
+      location.reload(true);
+    }
   } catch {}
 })();
 
