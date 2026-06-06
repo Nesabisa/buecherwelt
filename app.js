@@ -177,9 +177,10 @@ let _deletePending = null;
 
 function startDeleteAuthor(authorId, name) {
   if (_deleteTimer) { clearTimeout(_deleteTimer); commitDelete(); }
-  _deletePending = { authorId, author: S.authors.find(a=>a.id===authorId), books: S.books[authorId]||[] };
-  S.authors = S.authors.filter(a=>a.id!==authorId);
-  delete S.books[authorId];
+  const authorObj = S.authors.find(a => a.id===authorId);
+  _deletePending = { authorId, author: authorObj };
+  // Hide from Autoren tab but keep books/ratings in Bücher tab
+  if (authorObj) authorObj.hidden = true;
   renderAutoren(); renderAlleBuecher(); renderFavoriten();
   showDeleteToast(name);
   _deleteTimer = setTimeout(commitDelete, 5000);
@@ -188,8 +189,8 @@ function startDeleteAuthor(authorId, name) {
 function undoDelete() {
   if (!_deletePending) return;
   clearTimeout(_deleteTimer); _deleteTimer = null;
-  S.authors.push(_deletePending.author);
-  S.books[_deletePending.authorId] = _deletePending.books;
+  const authorObj = S.authors.find(a => a.id===_deletePending.authorId);
+  if (authorObj) authorObj.hidden = false;
   _deletePending = null;
   hideDeleteToast();
   renderAutoren(); renderAlleBuecher(); renderFavoriten();
@@ -200,7 +201,8 @@ async function commitDelete() {
   const {authorId} = _deletePending;
   _deletePending = null; _deleteTimer = null;
   hideDeleteToast();
-  try { await deleteAuthorFromDb(authorId); } catch(e) { console.error(e); }
+  // Keep books & ratings — just mark author as hidden in Firebase
+  try { await col('authors').doc(authorId).update({ hidden: true }); } catch(e) { console.error(e); }
 }
 
 function showDeleteToast(name) {
