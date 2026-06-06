@@ -218,20 +218,6 @@ function hideDeleteToast() {
 }
 
 
-/* ===== AUTO-UPDATE =====
-   URL-redirect instead of reload() — forces iOS WKWebView to bypass cache.
-   localStorage guard prevents redirect loop (at most one redirect per version). */
-const APP_VERSION = 70;
-(async () => {
-  try {
-    const r = await fetch(`version.json?t=${Date.now()}`);
-    const { v } = await r.json();
-    if (v && v !== APP_VERSION && !localStorage.getItem(`bw_tried_v${v}`)) {
-      localStorage.setItem(`bw_tried_v${v}`, '1');
-      location.href = location.href.split('?')[0] + '?_v=' + v;
-    }
-  } catch {}
-})();
 
 /* ===== GOOGLE BOOKS API ===== */
 const API = 'https://www.googleapis.com/books/v1/volumes';
