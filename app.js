@@ -218,6 +218,21 @@ function hideDeleteToast() {
 }
 
 
+/* ===== AUTO-UPDATE =====
+   localStorage guard: reload at most once per remote version.
+   localStorage persists across reloads — unlike sessionStorage on iOS. */
+const APP_VERSION = 66;
+(async () => {
+  try {
+    const r = await fetch(`version.json?t=${Date.now()}`);
+    const { v } = await r.json();
+    if (v && v !== APP_VERSION && !localStorage.getItem(`bw_tried_v${v}`)) {
+      localStorage.setItem(`bw_tried_v${v}`, '1');
+      location.reload(true);
+    }
+  } catch {}
+})();
+
 /* ===== GOOGLE BOOKS API ===== */
 const API = 'https://www.googleapis.com/books/v1/volumes';
 const BOOKS_KEY = 'AIzaSyD50NVJzvuje5QWECItyUBAu3wbBsWB0_s';
