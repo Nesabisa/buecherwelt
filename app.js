@@ -60,7 +60,8 @@ function matchesLang(i, lang) {
 // Normalize a book title for deduplication: lowercase, strip parentheticals + punctuation
 function normTitle(t) {
   return String(t||'').toLowerCase()
-    .replace(/\s*[\(\[].+?[\)\]]/g, '')
+    .replace(/\s*[\(\[].+?[\)\]]/g, '')   // strip (parentheses)
+    .replace(/\s+[-:—–|]\s+.+$/, '')       // strip subtitle after ": " or " - " etc.
     .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
