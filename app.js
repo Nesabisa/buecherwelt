@@ -215,6 +215,18 @@ function hideDeleteToast() {
   setTimeout(()=>t.classList.add('hidden'), 300);
 }
 
+/* ===== AUTO-UPDATE (iOS Home Screen) =====
+   Fetches version.json with a cache-busting timestamp so the
+   number is always fresh. If it differs from APP_VERSION → hard reload. */
+const APP_VERSION = 57;
+(async () => {
+  try {
+    const r = await fetch(`version.json?t=${Date.now()}`);
+    const { v } = await r.json();
+    if (v && v !== APP_VERSION) location.reload(true);
+  } catch {}
+})();
+
 /* ===== GOOGLE BOOKS API ===== */
 const API = 'https://www.googleapis.com/books/v1/volumes';
 const BOOKS_KEY = 'AIzaSyD50NVJzvuje5QWECItyUBAu3wbBsWB0_s';
@@ -464,7 +476,7 @@ async function searchBookByTitle(query) {
     const data = await fetchJson(`${API}?q=${encodeURIComponent(query)}&maxResults=8&fields=items(id,volumeInfo(title,authors,imageLinks,publishedDate))`);
     api = (data.items||[]).map(i => ({
       id:i.id, title:i.volumeInfo?.title||'', _local:false,
-      _authorName:(i.volumeInfo?.authors||[]).join(', '),
+      _authorName:(i.volumeInfo?.authors||[])[0]||'',
       coverId:i.volumeInfo?.imageLinks?.thumbnail?.replace('http://','https://')||null,
       year:(i.volumeInfo?.publishedDate||'').slice(0,4),
     })).filter(b => b.title.toLowerCase().includes(ql)||query.length<5);
