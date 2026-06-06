@@ -221,7 +221,7 @@ function hideDeleteToast() {
 /* ===== AUTO-UPDATE =====
    URL-redirect instead of reload() — forces iOS WKWebView to bypass cache.
    localStorage guard prevents redirect loop (at most one redirect per version). */
-const APP_VERSION = 69;
+const APP_VERSION = 70;
 (async () => {
   try {
     const r = await fetch(`version.json?t=${Date.now()}`);
@@ -891,7 +891,7 @@ function renderAlleBuecher() {
   let all = [];
   S.authors.forEach(a => {
     const lang = a.lang || 'de';
-    const authorBooks = dedupeBooks(S.books[a.id]||[]);
+    const authorBooks = dedupeBooks(S.books[a.id]||[]).filter(b => !b.hiddenFromList);
     // Preferred-language books for this author
     const preferred = new Set(authorBooks.filter(b => !b.language || b.language === lang).map(b => normTitle(b.title)));
     authorBooks
@@ -944,6 +944,7 @@ function renderAlleBuecher() {
             ${book.isFavorite?'⭐ Favorit':'☆ Favorit'}
           </button>
           <button class="btn-wish bl-wish">🛒 Merken</button>
+          <button class="btn-secondary bl-hide">✕ Aus Liste</button>
         </div>
       </div>
     </div>`;
@@ -956,6 +957,7 @@ function renderAlleBuecher() {
     if (e.target.closest('.bl-edit'))  { openEditBookModal(authorId, bookId); return; }
     if (e.target.closest('.bl-fav'))   { quickToggleFavorite(authorId, bookId); return; }
     if (e.target.closest('.bl-wish'))  { addBookToWishlist(authorId, bookId); return; }
+    if (e.target.closest('.bl-hide'))  { hideBookFromList(authorId, bookId); return; }
     if (e.target.closest('.book-list-row')) {
       if (item.classList.contains('expanded')) { item.classList.remove('expanded'); return; }
       document.querySelectorAll('.book-list-item.expanded').forEach(i=>i.classList.remove('expanded'));
@@ -963,6 +965,14 @@ function renderAlleBuecher() {
       lazyLoadListDescription(authorId, bookId, item);
     }
   };
+}
+
+function hideBookFromList(authorId, bookId) {
+  const book = getBook(authorId, bookId);
+  if (!book) return;
+  book.hiddenFromList = true;
+  updateBook(bookId, { hiddenFromList: true });
+  renderAlleBuecher();
 }
 
 async function lazyLoadListDescription(authorId, bookId, item) {
