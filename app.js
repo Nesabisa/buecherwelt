@@ -3,9 +3,15 @@ const SUGGESTED_AUTHORS = [
   'Charlotte Link','Hera Lind','Diana Gabaldon',
   'Jodi Picoult','Guillaume Musso','Karen Swan','Joy Fielding',
 ];
-// Genres that are too generic to be useful for recommendations
-const SKIP_GENRES = new Set(['Fiction','Juvenile Fiction','Nonfiction','Juvenile Nonfiction',
-  'Literary Collections','Literary Criticism','General','Short Stories','Classics']);
+// Genres that are too generic or off-topic for fiction recommendations
+const SKIP_GENRES = new Set([
+  'Fiction','Juvenile Fiction','Nonfiction','Juvenile Nonfiction',
+  'Literary Collections','Literary Criticism','General','Short Stories','Classics',
+  'Health & Fitness','Health','Fitness','Self-Help','Self Help',
+  'Body, Mind & Spirit','Psychology','Medical','Science','Technology',
+  'Business & Economics','Computers','Education','Reference',
+  'Family & Relationships','Social Science','True Crime',
+]);
 
 // German genre name → API query. "NEW:" prefix = free-text + orderBy=newest + langRestrict=de
 const GENRE_API_MAP = {
@@ -1012,11 +1018,16 @@ function clearFavSearch() {
 
 function renderFavoriten() {
   const grid = document.getElementById('favorites-grid');
-  let favs = [];
+  const favMap = new Map();
   S.authors.forEach(a => {
     const lang = a.lang || 'de';
-    dedupeBooks(S.books[a.id]||[]).filter(b => b.isFavorite && (b.rating || !b.language || b.language === lang)).forEach(b=>favs.push({...b,_authorName:a.name}));
+    const authorBooks = dedupeBooks(S.books[a.id]||[]).filter(b => !b.hiddenFromList);
+    const preferred = new Set(authorBooks.filter(b => !b.language || b.language === lang).map(b => normTitle(b.title)));
+    authorBooks
+      .filter(b => b.isFavorite && (!b.language || b.language === lang || (b.rating && !preferred.has(normTitle(b.title)))))
+      .forEach(b => { const k = normTitle(b.title); if (!favMap.has(k)) favMap.set(k, {...b, _authorName: a.name}); });
   });
+  let favs = [...favMap.values()];
   if (S.favSearch) {
     const ql = S.favSearch.toLowerCase();
     favs = favs.filter(b => b.title.toLowerCase().includes(ql) || b._authorName.toLowerCase().includes(ql));
