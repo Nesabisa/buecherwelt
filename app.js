@@ -483,9 +483,9 @@ async function searchBookByTitle(query) {
       badge = `<span class="btr-saved">${isRated?ratingEmoji(book.rating)+' Bewertet':'✓ In Liste'}</span>`;
     } else {
       const wishBtn  = `<button class="btn-wish-sm${onWish?' on-wish':''}" data-gid="${esc(book.id)}" data-title="${esc(book.title)}" data-author="${esc(book._authorName||'')}" data-cover="${esc(book.coverId||'')}" data-year="${esc(book.year||'')}" onclick="event.stopPropagation();addToWishlistFromBtn(this)">${onWish?'✓🛒':'🛒'}</button>`;
-      // Always show "+ Buch" — adds to existing author or creates hidden author
+      // Always show "+ Buch" — use data-attrs to avoid &-encoding issues in onclick
       const actionBtn = book._authorName
-        ? `<button class="btn-add-from-search" onclick="event.stopPropagation();addBookDirect(${jstr(book.id)},${jstr(book.title)},${jstr(book._authorName||'')},${jstr(book.coverId||'')},${jstr(book.year||'')})">+ Buch</button>`
+        ? `<button class="btn-add-from-search" data-gid="${esc(book.id)}" data-title="${esc(book.title)}" data-author="${esc(book._authorName||'')}" data-cover="${esc(book.coverId||'')}" data-year="${esc(book.year||'')}" onclick="event.stopPropagation();addBookDirectFromBtn(this)">+ Buch</button>`
         : '';
       badge = `<div class="btr-badge-row">${actionBtn}${wishBtn}</div>`;
     }
@@ -532,6 +532,10 @@ async function addBookToExistingAuthor(googleId, title, authorName, coverId, yea
     switchTab('buecher');
     setTimeout(() => document.getElementById(`li-${bookId}`)?.scrollIntoView({behavior:'smooth',block:'center'}), 200);
   }
+}
+
+function addBookDirectFromBtn(btn) {
+  addBookDirect(btn.dataset.gid, btn.dataset.title, btn.dataset.author, btn.dataset.cover, btn.dataset.year);
 }
 
 // Adds a book directly to Bücher — creates a hidden author if needed (not shown in Autoren tab)
