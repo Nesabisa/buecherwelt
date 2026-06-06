@@ -282,7 +282,7 @@ function renderInlineSuggestedChips() {
   const visible = allSuggestions.filter(n => !S.dismissedAuthors.has(n));
   const hasDismissed = S.dismissedAuthors.size > 0 || S.customSuggestedAuthors.some(n => S.dismissedAuthors.has(n));
   container.innerHTML = visible.map(name => {
-    const added = S.authors.some(a => a.name.toLowerCase()===name.toLowerCase());
+    const added = S.authors.some(a => !a.hidden && a.name.toLowerCase()===name.toLowerCase());
     if (added) return `<button class="suggested-chip" disabled data-name="${esc(name)}">✓ ${esc(name)}</button>`;
     return `<button class="suggested-chip has-x" data-name="${esc(name)}">
       <span class="chip-name">${esc(name)}</span>
@@ -675,8 +675,19 @@ async function addAuthor(name, imgUrl) {
   // If author exists as hidden (added via +Buch), make them visible instead of skipping
   const existingHidden = S.authors.find(a => a.hidden && a.name.toLowerCase()===name.toLowerCase());
   if (existingHidden) {
+    // Make visible and fetch proper book list
     existingHidden.hidden = false;
-    await col('authors').doc(existingHidden.id).update({ hidden: false });
+    showLoading(`Bücher von ${name} werden geladen …`);
+    try {
+      const books  = await fetchBooksForAuthor(existingHidden.name);
+      const genres = [...new Set(books.flatMap(b=>b.genres))].slice(0,5);
+      const withAuth = books.map(b => ({...b, authorId: existingHidden.id, id:`${existingHidden.id}_${b.googleId}`}));
+      if (genres.length) existingHidden.genres = genres;
+      S.books[existingHidden.id] = withAuth;
+      await col('authors').doc(existingHidden.id).update({ hidden: false, genres: existingHidden.genres });
+      await Promise.all(withAuth.map(b => saveBook(b)));
+    } catch { await col('authors').doc(existingHidden.id).update({ hidden: false }); }
+    hideLoading();
     renderAutoren(); renderAlleBuecher();
     return;
   }
