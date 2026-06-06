@@ -473,19 +473,22 @@ async function searchBookByTitle(query) {
   const all  = [...local, ...api.filter(b=>!seen.has(b.title.toLowerCase()))].slice(0,9);
   if (!all.length) { res.innerHTML='<p class="btr-status">Keine Treffer gefunden.</p>'; return; }
   res.innerHTML = all.map(book => {
-    const inList    = S.authors.some(a => a.name.toLowerCase()===(book._authorName||'').toLowerCase());
-    const isRated   = book._local && !!book.rating;
-    const cov       = book.coverId ? `<img class="btr-cover" src="${book.coverId}" alt="" loading="lazy">` : `<div class="btr-cover-ph">📖</div>`;
-    const onWish = !book._local && S.wishlist.some(w => w.googleId === book.id);
+    const savedAuthor    = S.authors.find(a => a.name.toLowerCase()===(book._authorName||'').toLowerCase());
+    const bookAlreadySaved = savedAuthor && (S.books[savedAuthor.id]||[]).some(b => b.googleId===book.id);
+    const isRated        = book._local && !!book.rating;
+    const cov            = book.coverId ? `<img class="btr-cover" src="${book.coverId}" alt="" loading="lazy">` : `<div class="btr-cover-ph">📖</div>`;
+    const onWish         = !book._local && S.wishlist.some(w => w.googleId===book.id);
     let badge = '';
-    if (book._local) {
+    if (book._local || bookAlreadySaved) {
       badge = `<span class="btr-saved">${isRated?ratingEmoji(book.rating)+' Bewertet':'✓ In Liste'}</span>`;
     } else {
-      const wishBtn = `<button class="btn-wish-sm${onWish?' on-wish':''}" data-gid="${esc(book.id)}" data-title="${esc(book.title)}" data-author="${esc(book._authorName||'')}" data-cover="${esc(book.coverId||'')}" data-year="${esc(book.year||'')}" onclick="event.stopPropagation();addToWishlistFromBtn(this)">${onWish?'✓🛒':'🛒'}</button>`;
-      const autorBtn = (!inList && book._authorName) ? `<button class="btn-add-from-search" onclick="event.stopPropagation();addAuthorFromSearch(${jstr(book._authorName)})">+ Autor</button>` : '';
-      badge = `<div class="btr-badge-row">${autorBtn}${wishBtn}</div>`;
+      const wishBtn  = `<button class="btn-wish-sm${onWish?' on-wish':''}" data-gid="${esc(book.id)}" data-title="${esc(book.title)}" data-author="${esc(book._authorName||'')}" data-cover="${esc(book.coverId||'')}" data-year="${esc(book.year||'')}" onclick="event.stopPropagation();addToWishlistFromBtn(this)">${onWish?'✓🛒':'🛒'}</button>`;
+      const actionBtn = savedAuthor
+        ? `<button class="btn-add-from-search" onclick="event.stopPropagation();addBookToExistingAuthor(${jstr(book.id)},${jstr(book.title)},${jstr(book._authorName||'')},${jstr(book.coverId||'')},${jstr(book.year||'')})">+ Buch</button>`
+        : (book._authorName ? `<button class="btn-add-from-search" onclick="event.stopPropagation();addAuthorFromSearch(${jstr(book._authorName)})">+ Autor</button>` : '');
+      badge = `<div class="btr-badge-row">${actionBtn}${wishBtn}</div>`;
     }
-    return `<div class="btr-item${isRated?' already-read':''}" ${book._local ? `onclick="jumpToBook('${book.authorId}','${book.id}')"` : ''}>
+    return `<div class="btr-item${isRated?' already-read':''}" ${(book._local||bookAlreadySaved) ? `onclick="jumpToBook('${book.authorId||savedAuthor?.id}','${book._local?book.id:(savedAuthor?.id+'_'+book.id)}')"` : ''}>
       ${cov}<div class="btr-info"><div class="btr-title">${esc(book.title)}</div><div class="btr-author">${esc(book._authorName)}${book.year?' · '+book.year:''}</div></div>${badge}
     </div>`;
   }).join('');
@@ -498,6 +501,32 @@ function jumpToBook(authorId, bookId) {
   setTimeout(() => { toggleBookExpand(authorId, bookId); document.getElementById(`bc-${bookId}`)?.scrollIntoView({behavior:'smooth',block:'center'}); }, 100);
 }
 async function addAuthorFromSearch(name) { await addAuthor(name, null); }
+
+async function addBookToExistingAuthor(googleId, title, authorName, coverId, year) {
+  const author = S.authors.find(a => a.name.toLowerCase()===authorName.toLowerCase());
+  if (!author) { await addAuthor(authorName, null); return; }
+  const bookId = `${author.id}_${googleId}`;
+  if ((S.books[author.id]||[]).some(b => b.id===bookId)) { jumpToBook(author.id, bookId); return; }
+  const lang    = author.lang || 'de';
+  const newBook = {
+    id: bookId, googleId, authorId: author.id,
+    title, subtitle: '', authors: [authorName],
+    coverId: coverId||null, year, genres: [],
+    language: lang, description: '',
+    rating: null, note: '', isFavorite: false, isNew: true, addedAt: Date.now(),
+  };
+  await saveBook(newBook);
+  if (!S.books[author.id]) S.books[author.id] = [];
+  S.books[author.id].push(newBook);
+  renderAutoren(); renderAlleBuecher();
+  clearBookTitleSearch();
+  switchTab('autoren');
+  setTimeout(() => {
+    const card = document.getElementById(`author-${author.id}`);
+    if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
+    setTimeout(() => document.getElementById(`bc-${bookId}`)?.scrollIntoView({behavior:'smooth',block:'center'}), 300);
+  }, 100);
+}
 
 /* ===== PER-AUTHOR BOOK FILTER ===== */
 function filterAuthorBooks(authorId, query) {
