@@ -1595,52 +1595,42 @@ function renderMerkliste() {
     const cover      = item.coverId
       ? `<img class="wish-cover" src="${item.coverId}" alt="" loading="lazy">`
       : `<div class="wish-cover-ph">📖</div>`;
-    const searchUrl  = `https://www.google.com/search?q=${encodeURIComponent(item.title+' '+authors+' kaufen')}`;
-    const descHtml   = item.description
-      ? `<div class="bl-desc">${esc(item.description)}</div>`
-      : (item.googleId ? `<div class="bl-desc-loading">Beschreibung wird geladen …</div>` : '');
-    return `<div class="wish-item book-list-item" id="wl-${item.id}" data-wish-id="${item.id}" data-gid="${esc(item.googleId||'')}">
-      <div class="wish-row book-list-row">
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(item.title+' '+authors+' kaufen')}`;
+    return `<div class="wish-item" id="wl-${item.id}" data-wish-id="${item.id}" data-gid="${esc(item.googleId||'')}">
+      <div class="wish-main">
         ${cover}
         <div class="wish-info">
           <div class="wish-title">${esc(item.title)}</div>
           <div class="wish-author">${esc(authors)}${item.year?' · '+item.year:''}</div>
         </div>
-        <span class="book-expand-arrow">▼</span>
-      </div>
-      <div class="book-list-expand wish-expand">
-        ${descHtml}
-        <div class="expand-actions">
-          <a class="wish-buy btn-edit" href="${searchUrl}" target="_blank" rel="noopener">🔍 Kaufen</a>
-          <button class="wish-del btn-secondary wl-del">✕ Entfernen</button>
+        <div class="wish-btns">
+          <a class="wish-buy" href="${searchUrl}" target="_blank" rel="noopener">🔍 Kaufen</a>
+          <button class="wish-del" data-id="${item.id}" onclick="event.stopPropagation();removeFromWishlist(this.dataset.id)">✕</button>
         </div>
       </div>
+      <div class="wish-desc-wrap"></div>
     </div>`;
   }).join('');
 
   list.onclick = e => {
+    if (e.target.closest('.wish-buy') || e.target.closest('.wish-del')) return;
     const item = e.target.closest('.wish-item');
     if (!item) return;
-    if (e.target.closest('.wl-del')) { removeFromWishlist(item.dataset.wishId); return; }
-    if (e.target.closest('.wish-buy')) return; // let link through
-    if (e.target.closest('.wish-row')) {
-      if (item.classList.contains('expanded')) { item.classList.remove('expanded'); return; }
-      document.querySelectorAll('.wish-item.expanded').forEach(i => i.classList.remove('expanded'));
-      item.classList.add('expanded');
-      // Lazy-load description
-      const gid = item.dataset.gid;
-      const wishId = item.dataset.wishId;
-      const wItem = S.wishlist.find(w => w.id === wishId);
-      if (gid && wItem && !wItem.description) {
-        fetchJson(`${API}/${gid}?fields=volumeInfo(description)`).then(data => {
-          const desc = stripHtml(data.volumeInfo?.description||'');
-          if (desc) {
-            wItem.description = desc;
-            const loadEl = item.querySelector('.bl-desc-loading');
-            if (loadEl) loadEl.outerHTML = `<div class="bl-desc">${esc(desc)}</div>`;
-          }
-        }).catch(()=>{});
-      }
+    const wrap   = item.querySelector('.wish-desc-wrap');
+    const wishId = item.dataset.wishId;
+    const wItem  = S.wishlist.find(w => w.id === wishId);
+    if (item.classList.contains('expanded')) { item.classList.remove('expanded'); wrap.innerHTML = ''; return; }
+    document.querySelectorAll('.wish-item.expanded').forEach(i => { i.classList.remove('expanded'); i.querySelector('.wish-desc-wrap').innerHTML = ''; });
+    item.classList.add('expanded');
+    if (!wItem) return;
+    wrap.innerHTML = wItem.description
+      ? `<div class="wish-desc">${esc(wItem.description)}</div>`
+      : `<div class="wish-desc-loading">Beschreibung wird geladen …</div>`;
+    if (!wItem.description && item.dataset.gid) {
+      fetchJson(`${API}/${item.dataset.gid}?fields=volumeInfo(description)`).then(data => {
+        const desc = stripHtml(data.volumeInfo?.description||'');
+        if (desc) { wItem.description = desc; wrap.innerHTML = `<div class="wish-desc">${esc(desc)}</div>`; }
+      }).catch(()=>{});
     }
   };
 }
