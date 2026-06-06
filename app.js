@@ -247,7 +247,7 @@ async function _doInlineAuthorSearch(q) {
       .slice(0,8);
     if (!matched.length) { res.innerHTML = '<p class="btr-status">Keine Ergebnisse – anderen Namen versuchen?</p>'; return; }
     res.innerHTML = matched.map(([name, img]) => {
-      const already = S.authors.some(a => a.name.toLowerCase() === name.toLowerCase());
+      const already = S.authors.some(a => !a.hidden && a.name.toLowerCase() === name.toLowerCase());
       const av = img ? `<img class="author-result-avatar" src="${img.replace('http://','https://')}" alt="">` : `<div class="author-result-ph">✍️</div>`;
       return `<div class="author-result ${already?'already-added':''}">
         ${av}<div><div class="author-result-name">${esc(name)}</div></div>
@@ -483,9 +483,10 @@ async function searchBookByTitle(query) {
       badge = `<span class="btr-saved">${isRated?ratingEmoji(book.rating)+' Bewertet':'✓ In Liste'}</span>`;
     } else {
       const wishBtn  = `<button class="btn-wish-sm${onWish?' on-wish':''}" data-gid="${esc(book.id)}" data-title="${esc(book.title)}" data-author="${esc(book._authorName||'')}" data-cover="${esc(book.coverId||'')}" data-year="${esc(book.year||'')}" onclick="event.stopPropagation();addToWishlistFromBtn(this)">${onWish?'✓🛒':'🛒'}</button>`;
-      const actionBtn = savedAuthor
-        ? `<button class="btn-add-from-search" onclick="event.stopPropagation();addBookToExistingAuthor(${jstr(book.id)},${jstr(book.title)},${jstr(book._authorName||'')},${jstr(book.coverId||'')},${jstr(book.year||'')})">+ Buch</button>`
-        : (book._authorName ? `<button class="btn-add-from-search" onclick="event.stopPropagation();addAuthorFromSearch(${jstr(book._authorName)})">+ Autor</button>` : '');
+      // Always show "+ Buch" — adds to existing author or creates hidden author
+      const actionBtn = book._authorName
+        ? `<button class="btn-add-from-search" onclick="event.stopPropagation();addBookDirect(${jstr(book.id)},${jstr(book.title)},${jstr(book._authorName||'')},${jstr(book.coverId||'')},${jstr(book.year||'')})">+ Buch</button>`
+        : '';
       badge = `<div class="btr-badge-row">${actionBtn}${wishBtn}</div>`;
     }
     return `<div class="btr-item${isRated?' already-read':''}" ${(book._local||bookAlreadySaved) ? `onclick="jumpToBook('${book.authorId||savedAuthor?.id}','${book._local?book.id:(savedAuthor?.id+'_'+book.id)}')"` : ''}>
@@ -504,7 +505,7 @@ async function addAuthorFromSearch(name) { await addAuthor(name, null); }
 
 async function addBookToExistingAuthor(googleId, title, authorName, coverId, year) {
   const author = S.authors.find(a => a.name.toLowerCase()===authorName.toLowerCase());
-  if (!author) { await addAuthor(authorName, null); return; }
+  if (!author) return;
   const bookId = `${author.id}_${googleId}`;
   if ((S.books[author.id]||[]).some(b => b.id===bookId)) { jumpToBook(author.id, bookId); return; }
   const lang    = author.lang || 'de';
@@ -520,12 +521,31 @@ async function addBookToExistingAuthor(googleId, title, authorName, coverId, yea
   S.books[author.id].push(newBook);
   renderAutoren(); renderAlleBuecher();
   clearBookTitleSearch();
-  switchTab('autoren');
-  setTimeout(() => {
-    const card = document.getElementById(`author-${author.id}`);
-    if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
-    setTimeout(() => document.getElementById(`bc-${bookId}`)?.scrollIntoView({behavior:'smooth',block:'center'}), 300);
-  }, 100);
+  if (!author.hidden) {
+    switchTab('autoren');
+    setTimeout(() => {
+      const card = document.getElementById(`author-${author.id}`);
+      if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
+      setTimeout(() => document.getElementById(`bc-${bookId}`)?.scrollIntoView({behavior:'smooth',block:'center'}), 300);
+    }, 100);
+  } else {
+    switchTab('buecher');
+    setTimeout(() => document.getElementById(`li-${bookId}`)?.scrollIntoView({behavior:'smooth',block:'center'}), 200);
+  }
+}
+
+// Adds a book directly to Bücher — creates a hidden author if needed (not shown in Autoren tab)
+async function addBookDirect(googleId, title, authorName, coverId, year) {
+  // If author already saved (visible or hidden), add book to them
+  const existing = S.authors.find(a => a.name.toLowerCase()===authorName.toLowerCase());
+  if (existing) { await addBookToExistingAuthor(googleId, title, authorName, coverId, year); return; }
+  // Create hidden author so book appears in Bücher but not in Autoren
+  const authorId = 'a_' + Date.now();
+  const newAuthor = { id: authorId, name: authorName, genres: [], lang: 'de', hidden: true, addedAt: Date.now() };
+  await col('authors').doc(authorId).set(newAuthor);
+  S.authors.push(newAuthor);
+  S.books[authorId] = [];
+  await addBookToExistingAuthor(googleId, title, authorName, coverId, year);
 }
 
 /* ===== PER-AUTHOR BOOK FILTER ===== */
@@ -672,11 +692,12 @@ async function addAuthor(name, imgUrl) {
 function renderAutoren() {
   renderInlineSuggestedChips();
   const list = document.getElementById('authors-list');
-  if (!S.authors.length) {
+  const visibleAuthors = S.authors.filter(a => !a.hidden);
+  if (!visibleAuthors.length) {
     list.innerHTML = `<div class="empty"><div class="empty-icon">🍁</div><p>Noch keine Autoren gespeichert.</p><p class="empty-hint">Such oben nach einem Autor!</p></div>`;
     return;
   }
-  list.innerHTML = S.authors.map(author => {
+  list.innerHTML = visibleAuthors.map(author => {
     const books    = dedupeBooks(S.books[author.id]||[]);
     const readCount= books.filter(b=>b.rating).length;
     const lang     = author.lang || 'de';
@@ -1076,7 +1097,7 @@ function getDiscoverGenres() {
 }
 
 function getSuggestedAuthorsForDropdown() {
-  const alreadyAdded = new Set(S.authors.map(a => a.name.toLowerCase()));
+  const alreadyAdded = new Set(S.authors.filter(a=>!a.hidden).map(a => a.name.toLowerCase()));
   // Top genres from liked books
   const topGenres = Object.entries(S.genreStats || {})
     .filter(([g]) => !SKIP_GENRES.has(g))
