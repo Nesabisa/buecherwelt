@@ -221,7 +221,7 @@ function hideDeleteToast() {
 /* ===== AUTO-UPDATE =====
    URL-redirect instead of reload() — forces iOS WKWebView to bypass cache.
    localStorage guard prevents redirect loop (at most one redirect per version). */
-const APP_VERSION = 67;
+const APP_VERSION = 68;
 (async () => {
   try {
     const r = await fetch(`version.json?t=${Date.now()}`);
@@ -781,7 +781,7 @@ function renderBooksGrid(books, authorId) {
   const author = S.authors.find(a => a.id === authorId);
   const lang = author?.lang || 'de';
   books = dedupeBooks(books)
-    .filter(b => !b.language || b.language === lang)
+    .filter(b => b.rating || !b.language || b.language === lang)
     .sort((a, b) => parseInt(b.year || 0) - parseInt(a.year || 0));
   if (!books.length) return `<p style="color:var(--tl);font-size:13px;padding:8px 0;grid-column:1/-1;font-family:'Cormorant Garamond',serif;font-style:italic">Kein Buch gefunden.</p>`;
   return books.map(book => {
@@ -892,7 +892,7 @@ function renderAlleBuecher() {
   S.authors.forEach(a => {
     const lang = a.lang || 'de';
     dedupeBooks(S.books[a.id]||[])
-      .filter(b => !b.language || b.language === lang)
+      .filter(b => b.rating || !b.language || b.language === lang)
       .forEach(b => all.push({...b, _authorName: a.name}));
   });
   if (S.bookFilter==='gelesen')   all = all.filter(b=>b.rating);
@@ -1003,7 +1003,7 @@ function renderFavoriten() {
   let favs = [];
   S.authors.forEach(a => {
     const lang = a.lang || 'de';
-    dedupeBooks(S.books[a.id]||[]).filter(b => b.isFavorite && (!b.language || b.language === lang)).forEach(b=>favs.push({...b,_authorName:a.name}));
+    dedupeBooks(S.books[a.id]||[]).filter(b => b.isFavorite && (b.rating || !b.language || b.language === lang)).forEach(b=>favs.push({...b,_authorName:a.name}));
   });
   if (S.favSearch) {
     const ql = S.favSearch.toLowerCase();
