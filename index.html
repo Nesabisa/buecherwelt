@@ -271,6 +271,11 @@
   </div>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=74"></script>
+  <script src="app.js?v=75"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
 </body>
 </html>

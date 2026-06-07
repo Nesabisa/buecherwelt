@@ -3,14 +3,10 @@ const SUGGESTED_AUTHORS = [
   'Charlotte Link','Hera Lind','Diana Gabaldon',
   'Jodi Picoult','Guillaume Musso','Karen Swan','Joy Fielding',
 ];
-// Genres that are too generic or off-topic for fiction recommendations
+// Genres that are too generic to be useful for recommendations
 const SKIP_GENRES = new Set([
   'Fiction','Juvenile Fiction','Nonfiction','Juvenile Nonfiction',
   'Literary Collections','Literary Criticism','General','Short Stories','Classics',
-  'Health & Fitness','Health','Fitness','Self-Help','Self Help',
-  'Body, Mind & Spirit','Psychology','Medical','Science','Technology',
-  'Business & Economics','Computers','Education','Reference',
-  'Family & Relationships','Social Science','True Crime',
 ]);
 
 // German genre name → API query. "NEW:" prefix = free-text + orderBy=newest + langRestrict=de
@@ -430,7 +426,7 @@ async function fetchBooksForGenre(apiQuery, genreName = '') {
 }
 
 async function fetchGenreSuggestions(stats) {
-  // Prefer genres from liked books, fall back to any genre from saved authors' books
+  // Get top 3 genres from liked books, fall back to any genre from saved books
   let top = Object.entries(stats).filter(([g])=>!SKIP_GENRES.has(g)).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g);
   if (!top.length) {
     const fromBooks = new Set();
@@ -439,9 +435,22 @@ async function fetchGenreSuggestions(stats) {
     ));
     top = [...fromBooks].slice(0,3);
   }
-  // Fallback: beliebte deutsche Genres wenn noch keine Daten vorhanden
   if (!top.length) top = ['Krimi', 'Liebesroman', 'Thriller'];
-  return await fetchBooksForGenre(genreForApi(top[0]), top[0]);
+
+  // Get books from all top genres, mix them, exclude known authors and already-owned books
+  const books = [];
+  const knownAuthors = new Set(S.authors.map(a => a.name.toLowerCase()));
+  const ownedGoogleIds = new Set();
+  S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
+
+  for (const genre of top) {
+    const genreBooks = await fetchBooksForGenre(genreForApi(genre), genre);
+    genreBooks
+      .filter(b => !knownAuthors.has((b.authors?.[0]||'').toLowerCase()) && !ownedGoogleIds.has(b.googleId))
+      .forEach(b => books.push(b));
+    if (books.length >= 16) break;
+  }
+  return books.slice(0,16);
 }
 
 /* ===== BOOK TITLE SEARCH ===== */
@@ -1277,6 +1286,11 @@ async function loadSuggestionsForGenre(genre) {
       if (hint) hint.textContent = `Bücher von ${authorName}`;
     } else {
       books = await fetchBooksForGenre(genreForApi(genre), genre);
+      // Filter out known authors and already-owned books from suggestions
+      const knownAuthors = new Set(S.authors.map(a => a.name.toLowerCase()));
+      const ownedGoogleIds = new Set();
+      S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
+      books = books.filter(b => !knownAuthors.has((b.authors?.[0]||'').toLowerCase()) && !ownedGoogleIds.has(b.googleId));
     }
     S.suggestions = books;
     if (!books.length) {
