@@ -437,70 +437,92 @@ function buildAuthorGenreMap() {
   return map;
 }
 
+// Genres that have a meaningful search mapping (used to filter out bad Google tags)
+function isKnownGenre(g) {
+  return !!(GENRE_API_MAP[g] || GENRE_EN_MAP[g] || GENRE_AUTHORS[g]);
+}
+
 // "Für dich" — author-similarity based on liked/favorited books
 async function fetchPersonalizedSuggestions() {
   const knownAuthors = new Set(S.authors.map(a => a.name.toLowerCase()));
   const ownedGoogleIds = new Set();
   S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
 
-  // Find authors whose books the user has liked or favorited
   const likedAuthors = S.authors.filter(a =>
     (S.books[a.id]||[]).some(b => b.rating === 'liked' || b.isFavorite)
   );
 
   if (likedAuthors.length > 0) {
+    // Step 1: find similar authors via GENRE_AUTHORS similarity map
     const authorGenreMap = buildAuthorGenreMap();
-    const sugAuthors = []; // [{name, because}]
+    const sugAuthors = [];
     const seen = new Set();
-
     for (const a of likedAuthors) {
-      // Find genres this author appears in
       const genres = authorGenreMap[a.name.toLowerCase()] || [];
-      // Also use genres from their liked books directly
       const bookGenres = [];
       (S.books[a.id]||[]).filter(b => b.rating==='liked'||b.isFavorite).forEach(b =>
         (b.genres||[]).filter(g => !SKIP_GENRES.has(g) && GENRE_AUTHORS[g]).forEach(g => bookGenres.push(g))
       );
-      const allGenres = [...new Set([...genres, ...bookGenres])];
-
-      for (const genre of allGenres) {
+      for (const genre of [...new Set([...genres, ...bookGenres])]) {
         for (const sug of (GENRE_AUTHORS[genre] || [])) {
           if (!seen.has(sug.toLowerCase()) && !knownAuthors.has(sug.toLowerCase())) {
-            seen.add(sug.toLowerCase());
-            sugAuthors.push({ name: sug, because: a.name });
+            seen.add(sug.toLowerCase()); sugAuthors.push({ name: sug, because: a.name });
           }
         }
       }
     }
-
     if (sugAuthors.length > 0) {
       const books = [];
       for (const { name: sugName, because } of sugAuthors.slice(0, 5)) {
         try {
           const ab = await fetchBooksForAuthor(sugName, 'de');
-          ab.filter(b => !ownedGoogleIds.has(b.googleId))
-            .slice(0, 3)
+          ab.filter(b => !ownedGoogleIds.has(b.googleId)).slice(0, 3)
             .forEach(b => books.push({ ...b, _because: because }));
         } catch {}
         if (books.length >= 16) break;
       }
       if (books.length >= 3) return books.slice(0, 16);
     }
+
+    // Step 2: author-similarity failed → use genres from LIKED books only,
+    // but only genres we know how to search (filters out bad Google tags like "Health & Fitness")
+    const likedGenres = {};
+    likedAuthors.forEach(a => {
+      (S.books[a.id]||[]).filter(b => b.rating==='liked'||b.isFavorite).forEach(b => {
+        (b.genres||[]).filter(g => !SKIP_GENRES.has(g) && isKnownGenre(g)).forEach(g => {
+          likedGenres[g] = (likedGenres[g] || 0) + 1;
+        });
+      });
+    });
+    const topLikedGenres = Object.entries(likedGenres).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g);
+    if (topLikedGenres.length > 0) {
+      const books = [];
+      const because = likedAuthors[0]?.name;
+      for (const genre of topLikedGenres) {
+        const gb = await fetchBooksForGenre(genreForApi(genre), genre);
+        gb.filter(b => !knownAuthors.has((b.authors?.[0]||'').toLowerCase()) && !ownedGoogleIds.has(b.googleId))
+          .slice(0, 6).forEach(b => books.push({ ...b, _because: because }));
+        if (books.length >= 16) break;
+      }
+      if (books.length >= 3) return books.slice(0, 16);
+    }
   }
 
-  // Fallback: genre-based suggestions
-  return fetchGenreSuggestions(S.genreStats);
+  // No liked books at all → safe defaults, never random book genres
+  const books = [];
+  for (const genre of ['Liebesroman', 'Krimi', 'Thriller', 'Historischer Roman']) {
+    const gb = await fetchBooksForGenre(genreForApi(genre), genre);
+    gb.filter(b => !knownAuthors.has((b.authors?.[0]||'').toLowerCase()) && !ownedGoogleIds.has(b.googleId))
+      .forEach(b => books.push(b));
+    if (books.length >= 16) break;
+  }
+  return books.slice(0, 16);
 }
 
 async function fetchGenreSuggestions(stats) {
-  let top = Object.entries(stats).filter(([g])=>!SKIP_GENRES.has(g)).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g);
-  if (!top.length) {
-    const fromBooks = new Set();
-    S.authors.forEach(a => (S.books[a.id]||[]).forEach(b =>
-      (b.genres||[]).filter(g=>!SKIP_GENRES.has(g)).forEach(g=>fromBooks.add(g))
-    ));
-    top = [...fromBooks].slice(0,3);
-  }
+  // Used when a specific genre is selected — only genres with known mappings to avoid bad tags
+  let top = Object.entries(stats).filter(([g])=>!SKIP_GENRES.has(g) && isKnownGenre(g))
+    .sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g);
   if (!top.length) top = ['Krimi', 'Liebesroman', 'Thriller'];
   const books = [];
   const knownAuthors = new Set(S.authors.map(a => a.name.toLowerCase()));
