@@ -25,7 +25,7 @@ const GENRE_API_MAP = {
   'Abenteuer':           'Abenteuer adventure',
   'Horror':              'Horror',
   'Romantasy':           'Romantasy romantic fantasy',
-  'Spiegel-Bestseller':  'NEW:Spiegel Bestseller Roman',
+  'Spiegel-Bestseller':  'SPIEGEL',
   'Neuerscheinungen':    'NEW:Roman Neuerscheinung',
 };
 // English genre names from Google Books API categories → mapped to API query
@@ -532,7 +532,7 @@ async function fetchGenreSuggestions(stats) {
       .forEach(b => books.push(b));
     if (books.length >= 16) break;
   }
-  return books.slice(0,16);
+  return dedupeBooks(books).slice(0,16);
 }
 
 /* ===== BOOK TITLE SEARCH ===== */
@@ -1306,6 +1306,29 @@ async function onGenreSelectChange(val) {
   await loadSuggestionsForGenre(S.selectedDiscoverGenre);
 }
 
+async function fetchSpiegelBestseller() {
+  const cutoff = new Date().getFullYear() - 2; // only last ~2 years
+  // Search for books explicitly marked as SPIEGEL-Bestseller in their metadata
+  const [data1, data2] = await Promise.all([
+    fetchJson(`${API}?q=%22SPIEGEL-Bestseller%22&langRestrict=de&orderBy=newest&maxResults=40`),
+    fetchJson(`${API}?q=%22Spiegel-Bestseller%22+Roman&langRestrict=de&orderBy=newest&maxResults=40`),
+  ]);
+  const seen = new Set();
+  const all = [...(data1.items||[]), ...(data2.items||[])].filter(i => {
+    if (seen.has(i.id)) return false;
+    seen.add(i.id);
+    const yr = parseInt((i.volumeInfo?.publishedDate||'').slice(0,4));
+    return !yr || yr >= cutoff;
+  });
+  return dedupeBooks(mapBookItems(
+    all.sort((a,b) => {
+      const ya = parseInt((a.volumeInfo?.publishedDate||'0').slice(0,4))||0;
+      const yb = parseInt((b.volumeInfo?.publishedDate||'0').slice(0,4))||0;
+      return yb-ya;
+    }).slice(0,20)
+  ));
+}
+
 async function fetchNYTBestsellers() {
   const key = window.NYT_KEY;
   // Without key: use a curated Google Books approximation
@@ -1354,6 +1377,9 @@ async function loadSuggestionsForGenre(genre) {
       books = await fetchPersonalizedSuggestions();
     } else if (genre === 'NYT-Bestseller') {
       books = await fetchNYTBestsellers();
+    } else if (genre === 'Spiegel-Bestseller') {
+      books = await fetchSpiegelBestseller();
+      if (hint) hint.textContent = 'Aktuelle Spiegel-Bestseller';
     } else if (genre.startsWith('AUTHOR:')) {
       const authorName = genre.slice(7);
       const data = await fetchJson(
@@ -1367,13 +1393,12 @@ async function loadSuggestionsForGenre(genre) {
       if (hint) hint.textContent = `Bücher von ${authorName}`;
     } else {
       books = await fetchBooksForGenre(genreForApi(genre), genre);
-      // Filter out known authors and already-owned books from suggestions
       const knownAuthors = new Set(S.authors.map(a => a.name.toLowerCase()));
       const ownedGoogleIds = new Set();
       S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
       books = books.filter(b => !knownAuthors.has((b.authors?.[0]||'').toLowerCase()) && !ownedGoogleIds.has(b.googleId));
     }
-    S.suggestions = books;
+    S.suggestions = dedupeBooks(books);
     if (!books.length) {
       hint.textContent = genre ? `Keine Bücher für „${genre.startsWith('AUTHOR:')?genre.slice(7):genre}" gefunden` : 'Keine Empfehlungen gefunden';
       sug.innerHTML = '<p class="disc-empty">Nichts gefunden – versuch ein anderes Genre!</p>';
