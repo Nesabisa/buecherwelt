@@ -510,8 +510,29 @@ async function fetchPersonalizedSuggestions() {
     }
   }
 
-  // No liked books at all → show current popular German fiction
-  return fetchNeuerscheinungen();
+  // No liked books → use genres from ALL books in library (even unrated)
+  const allGenres = {};
+  S.authors.filter(a => !a.hidden).forEach(a => {
+    (S.books[a.id]||[]).filter(b => !b.hiddenFromList).forEach(b => {
+      (b.genres||[]).filter(g => !SKIP_GENRES.has(g) && isKnownGenre(g) && GENRE_API_MAP[g]).forEach(g => {
+        allGenres[g] = (allGenres[g] || 0) + 1;
+      });
+    });
+  });
+  const topGenres = Object.entries(allGenres).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g);
+  if (topGenres.length > 0) {
+    const books = [];
+    for (const genre of topGenres) {
+      const gb = await fetchBooksForGenre(genreForApi(genre), genre);
+      gb.filter(b => !knownAuthors.has((b.authors?.[0]||'').toLowerCase()) && !ownedGoogleIds.has(b.googleId))
+        .slice(0, 6).forEach(b => books.push(b));
+      if (books.length >= 16) break;
+    }
+    if (books.length >= 3) return limitPerAuthor(dedupeBooks(books)).slice(0, 16);
+  }
+
+  // Last resort: Spiegel Bestseller
+  return fetchSpiegelBestseller();
 }
 
 async function fetchGenreSuggestions(stats) {
@@ -1263,7 +1284,7 @@ function getDiscoverGenres() {
   S.authors.forEach(a => (S.books[a.id]||[]).forEach(b =>
     (b.genres||[]).filter(g=>!SKIP_GENRES.has(g)).forEach(g => fromBooks.add(g))
   ));
-  const defaults = ['NYT-Bestseller','Spiegel-Bestseller','Neuerscheinungen','Krimi','Thriller','Liebesroman','Romantasy','Fantasy','Historischer Roman','Biografie','Science Fiction','Horror','Humor'];
+  const defaults = ['NYT-Bestseller','Spiegel-Bestseller','Krimi','Thriller','Liebesroman','Romantasy','Fantasy','Historischer Roman','Biografie','Science Fiction','Horror','Humor'];
   const all = [...fromBooks, ...defaults.filter(d => !fromBooks.has(d))];
   return [...new Set(all)].slice(0, 18);
 }
