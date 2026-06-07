@@ -99,37 +99,36 @@ function limitPerAuthor(books, max = 2) {
   });
 }
 
-// Curated German-market bestseller authors per genre → used instead of subject: searches
-// Keys cover both German genre names AND English Google Books category names
-// Arrays of authors per genre — queried individually (OR doesn't work in Google Books API)
+// Current bestselling authors per genre — kept up to date with trending names.
+// Used to fetch their NEWEST books (last 3 years) for genre suggestions.
 const GENRE_AUTHORS = {
-  'Krimi':               ['Sebastian Fitzek', 'Nele Neuhaus', 'Ursula Poznanski'],
-  'Kriminalroman':       ['Sebastian Fitzek', 'Nele Neuhaus', 'Jan Seghers'],
-  'Crime Fiction':       ['Sebastian Fitzek', 'Nele Neuhaus', 'Ursula Poznanski'],
-  'Mystery & Detective': ['Nele Neuhaus', 'Sebastian Fitzek', 'Petra Hammesfahr'],
-  'Mystery':             ['Nele Neuhaus', 'Sebastian Fitzek', 'Ursula Poznanski'],
-  'Thriller':            ['Sebastian Fitzek', 'Marc Elsberg', 'Arno Strobel'],
-  'Suspense':            ['Sebastian Fitzek', 'Marc Elsberg', 'Andreas Winkelmann'],
-  'Liebesroman':         ['Dora Heldt', 'Nicolas Barreau', 'Rosamunde Pilcher'],
-  'Romance':             ['Dora Heldt', 'Nicolas Barreau', 'Cecelia Ahern'],
-  'Love Stories':        ['Dora Heldt', 'Nicolas Barreau', 'Cecelia Ahern'],
-  "Women's Fiction":     ['Dora Heldt', 'Ildikó von Kürthy', 'Jojo Moyes'],
-  'Historischer Roman':  ['Rebecca Gablé', 'Petra Durst-Benning', 'Ken Follett'],
-  'Historical Fiction':  ['Rebecca Gablé', 'Petra Durst-Benning', 'Tanja Kinkel'],
-  'Fantasy':             ['Markus Heitz', 'Bernhard Hennen', 'Wolfgang Hohlbein'],
-  'Romantasy':           ['Sarah J. Maas', 'Jennifer L. Armentrout', 'Rebecca Ross'],
-  'Science Fiction':     ['Andreas Eschbach', 'Frank Schätzing', 'Marc Elsberg'],
-  'Horror':              ['Sebastian Fitzek', 'Stephen King', 'John Katzenbach'],
-  'Humor':               ['Dora Heldt', 'Bastian Sick', 'Hape Kerkeling'],
-  'Drama':               ['Jojo Moyes', 'Cecelia Ahern', 'Lucinda Riley'],
-  'Literary Fiction':    ['Daniel Kehlmann', 'Ferdinand von Schirach', 'Juli Zeh'],
-  'Abenteuer':           ['Frank Schätzing', 'Ken Follett', 'Andreas Eschbach'],
-  'Adventure':           ['Frank Schätzing', 'Ken Follett', 'Andreas Eschbach'],
-  'Biografie':           ['Hape Kerkeling', 'Michelle Obama', 'Ferdinand von Schirach'],
-  'Biography & Autobiography': ['Hape Kerkeling', 'Michelle Obama', 'Reinhold Messner'],
-  'Health & Fitness':    ['Giulia Enders', 'Bas Kast', 'Eckart von Hirschhausen', 'Sarah Kessans'],
-  'Self-Help':           ['Eckart von Hirschhausen', 'Reinhard K. Sprenger', 'Vera F. Birkenbihl'],
-  'Body, Mind & Spirit': ['Giulia Enders', 'Bas Kast', 'Beate Höfener'],
+  'Krimi':               ['Nele Neuhaus', 'Sebastian Fitzek', 'Klaus-Peter Wolf', 'Donna Leon'],
+  'Kriminalroman':       ['Nele Neuhaus', 'Sebastian Fitzek', 'Klaus-Peter Wolf'],
+  'Crime Fiction':       ['Nele Neuhaus', 'Sebastian Fitzek', 'Ursula Poznanski'],
+  'Mystery & Detective': ['Nele Neuhaus', 'Ursula Poznanski', 'Donna Leon'],
+  'Mystery':             ['Nele Neuhaus', 'Ursula Poznanski', 'Klaus-Peter Wolf'],
+  'Thriller':            ['Sebastian Fitzek', 'Marc Elsberg', 'Harlan Coben', 'James Patterson'],
+  'Suspense':            ['Sebastian Fitzek', 'Marc Elsberg', 'Harlan Coben'],
+  'Liebesroman':         ['Colleen Hoover', 'Emily Henry', 'Hannah Grace', 'Mona Kasten', 'Ali Hazelwood'],
+  'Romance':             ['Colleen Hoover', 'Emily Henry', 'Hannah Grace', 'Ali Hazelwood'],
+  'Love Stories':        ['Colleen Hoover', 'Emily Henry', 'Jojo Moyes'],
+  "Women's Fiction":     ['Colleen Hoover', 'Emily Henry', 'Jojo Moyes', 'Liane Moriarty'],
+  'Romantasy':           ['Rebecca Yarros', 'Sarah J. Maas', 'Jennifer L. Armentrout', 'Holly Black', 'Alexis Hall'],
+  'Fantasy':             ['Brandon Sanderson', 'Leigh Bardugo', 'Travis Baldree', 'V.E. Schwab'],
+  'Historical Fiction':  ['Philippa Gregory', 'Ken Follett', 'Kristin Hannah', 'Lisa See'],
+  'Historischer Roman':  ['Ken Follett', 'Philippa Gregory', 'Rebecca Gablé', 'Kristin Hannah'],
+  'Science Fiction':     ['Andy Weir', 'Blake Crouch', 'Martha Wells', 'Andreas Eschbach'],
+  'Horror':              ['Stephen King', 'Paul Tremblay', 'Riley Sager', 'Joe Hill'],
+  'Humor':               ['Hape Kerkeling', 'Bastian Sick', 'Eckart von Hirschhausen'],
+  'Drama':               ['Jojo Moyes', 'Liane Moriarty', 'Kristin Hannah', 'Picoult Jodi'],
+  'Literary Fiction':    ['Juli Zeh', 'Daniel Kehlmann', 'Ferdinand von Schirach', 'Benedict Wells'],
+  'Abenteuer':           ['Frank Schätzing', 'Ken Follett', 'Andy Weir'],
+  'Adventure':           ['Frank Schätzing', 'Ken Follett', 'Andy Weir'],
+  'Biografie':           ['Prince Harry', 'Britney Spears', 'Michelle Obama', 'Hape Kerkeling'],
+  'Biography & Autobiography': ['Prince Harry', 'Britney Spears', 'Michelle Obama'],
+  'Health & Fitness':    ['Giulia Enders', 'Bas Kast', 'Eckart von Hirschhausen'],
+  'Self-Help':           ['Brené Brown', 'Mark Manson', 'Eckart von Hirschhausen'],
+  'Body, Mind & Spirit': ['Giulia Enders', 'Bas Kast', 'Brené Brown'],
 };
 
 /* ===== STATE ===== */
@@ -387,14 +386,35 @@ function mapBookItems(items) {
 }
 
 // Shared helper: fetch books for a genre, sorted newest first.
-// Fetch recent popular books for a genre — simple, current, no author-list bias.
+// Fetch recent bestselling books for a genre.
+// Strategy: search "Bestseller + {genre keyword}" — returns books Google Books
+// knows are bestsellers in that category, newest first.
 async function fetchBooksForGenre(apiQuery, genreName = '') {
-  const cutoff = new Date().getFullYear() - 5; // last 5 years
-  const isNew = apiQuery.startsWith('NEW:');
-  const q = isNew ? apiQuery.slice(4) : `subject:${apiQuery}`;
-  const url = `${API}?q=${encodeURIComponent(q)}&langRestrict=de&orderBy=newest&maxResults=40`;
-  const data = await fetchJson(url);
-  const items = (data.items||[]).filter(i => {
+  const cutoff = new Date().getFullYear() - 4; // last 4 years
+  // Map genre to a good search keyword (shorter than full API query)
+  const GENRE_KEYWORD = {
+    'Thriller':'Thriller','Krimi':'Krimi','Kriminalroman':'Krimi',
+    'Liebesroman':'Liebesroman','Romance':'Romance','Romantasy':'Romantasy',
+    'Fantasy':'Fantasy','Horror':'Horror','Science Fiction':'Science Fiction',
+    'Historischer Roman':'Historischer Roman','Historical Fiction':'Historical Fiction',
+    'Biografie':'Biografie','Biography & Autobiography':'Biografie',
+    'Humor':'Humor','Drama':'Roman','Abenteuer':'Abenteuer',
+    'Literary Fiction':'Literatur','Self-Help':'Ratgeber','Health & Fitness':'Gesundheit',
+  };
+  const keyword = GENRE_KEYWORD[genreName] || (apiQuery.startsWith('NEW:') ? apiQuery.slice(4) : apiQuery);
+
+  // Two parallel searches: Spiegel-Bestseller + genre, and general bestseller + genre
+  const [d1, d2] = await Promise.all([
+    fetchJson(`${API}?q=${encodeURIComponent('"Spiegel-Bestseller" '+keyword)}&langRestrict=de&orderBy=newest&maxResults=30`)
+      .then(d=>d.items||[]).catch(()=>[]),
+    fetchJson(`${API}?q=${encodeURIComponent('Bestseller '+keyword)}&langRestrict=de&orderBy=newest&maxResults=30`)
+      .then(d=>d.items||[]).catch(()=>[]),
+  ]);
+
+  const seen = new Set();
+  const merged = [...d1, ...d2].filter(i => {
+    if (seen.has(i.id)) return false;
+    seen.add(i.id);
     const yr = parseInt((i.volumeInfo?.publishedDate||'').slice(0,4));
     return !yr || yr >= cutoff;
   }).sort((a,b)=>{
@@ -402,7 +422,8 @@ async function fetchBooksForGenre(apiQuery, genreName = '') {
     const yb=parseInt((b.volumeInfo?.publishedDate||'0').slice(0,4))||0;
     return yb-ya;
   });
-  return limitPerAuthor(dedupeBooks(mapBookItems(items.slice(0,24))));
+
+  return limitPerAuthor(dedupeBooks(mapBookItems(merged.slice(0,24))));
 }
 
 // Build a reverse lookup: author name (lowercase) → genres they appear in GENRE_AUTHORS
@@ -1335,12 +1356,12 @@ async function fetchSpiegelBestseller() {
 
 async function fetchNYTBestsellers() {
   const key = window.NYT_KEY;
-  // Without key: use recent international bestsellers with German translations
+  // Without key: search for NYT bestseller tagged books in German
   if (!key) {
     const cutoff = new Date().getFullYear() - 3;
     const [d1, d2] = await Promise.all([
-      fetchJson(`${API}?q=international+bestseller+Roman&langRestrict=de&orderBy=newest&maxResults=30`).then(d=>d.items||[]).catch(()=>[]),
-      fetchJson(`${API}?q=Weltbestseller+Roman&langRestrict=de&orderBy=newest&maxResults=30`).then(d=>d.items||[]).catch(()=>[]),
+      fetchJson(`${API}?q=${encodeURIComponent('"New York Times bestseller"')}&langRestrict=de&orderBy=newest&maxResults=30`).then(d=>d.items||[]).catch(()=>[]),
+      fetchJson(`${API}?q=${encodeURIComponent('"New York Times Bestseller" Roman')}&langRestrict=de&orderBy=newest&maxResults=30`).then(d=>d.items||[]).catch(()=>[]),
     ]);
     const seen = new Set();
     const all = [...d1,...d2].filter(i => {
