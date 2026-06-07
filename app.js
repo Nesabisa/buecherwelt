@@ -449,7 +449,7 @@ async function fetchPersonalizedSuggestions() {
   S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
 
   const likedAuthors = S.authors.filter(a =>
-    (S.books[a.id]||[]).some(b => b.rating === 'liked' || b.isFavorite)
+    (S.books[a.id]||[]).some(b => b.rating === 'liked')
   );
 
   if (likedAuthors.length > 0) {
@@ -1163,7 +1163,7 @@ function renderFavoriten() {
 /* ===== DISCOVER ===== */
 async function loadDiscover() {
   const allNew = [];
-  for (const author of S.authors) {
+  for (const author of S.authors.filter(a => !a.hidden)) {
     try {
       const nb = await checkNewBooksForAuthor(author);
       nb.forEach(b=>allNew.push(b));
