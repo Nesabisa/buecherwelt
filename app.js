@@ -126,9 +126,9 @@ const GENRE_AUTHORS = {
   'Adventure':           ['Frank Schätzing', 'Ken Follett', 'Andy Weir'],
   'Biografie':           ['Prince Harry', 'Britney Spears', 'Michelle Obama', 'Hape Kerkeling'],
   'Biography & Autobiography': ['Prince Harry', 'Britney Spears', 'Michelle Obama'],
-  'Health & Fitness':    ['Giulia Enders', 'Bas Kast', 'Eckart von Hirschhausen'],
-  'Self-Help':           ['Brené Brown', 'Mark Manson', 'Eckart von Hirschhausen'],
-  'Body, Mind & Spirit': ['Giulia Enders', 'Bas Kast', 'Brené Brown'],
+  'Health & Fitness':    ['Giulia Enders', 'Bas Kast', 'Peter Spork', 'Volker Pudel', 'Rüdiger Dahlke'],
+  'Self-Help':           ['Brené Brown', 'Mark Manson', 'James Clear', 'Mel Robbins', 'Simon Sinek'],
+  'Body, Mind & Spirit': ['Giulia Enders', 'Bas Kast', 'Brené Brown', 'Rüdiger Dahlke'],
 };
 
 /* ===== STATE ===== */
@@ -464,8 +464,10 @@ async function fetchPersonalizedSuggestions() {
         (b.genres||[]).filter(g => !SKIP_GENRES.has(g) && GENRE_AUTHORS[g]).forEach(g => bookGenres.push(g))
       );
       for (const genre of [...new Set([...genres, ...bookGenres])]) {
-        for (const sug of (GENRE_AUTHORS[genre] || [])) {
-          if (!seen.has(sug.toLowerCase()) && !knownAuthors.has(sug.toLowerCase())) {
+        const genreAuthors = (GENRE_AUTHORS[genre] || []).filter(s => !knownAuthors.has(s.toLowerCase()));
+        if (genreAuthors.length < 2) continue; // skip genres with too few suggestions
+        for (const sug of genreAuthors) {
+          if (!seen.has(sug.toLowerCase())) {
             seen.add(sug.toLowerCase()); sugAuthors.push({ name: sug, because: a.name });
           }
         }
