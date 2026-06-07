@@ -378,9 +378,10 @@ function mapBookItems(items) {
 // genreName = original genre label → checked against GENRE_AUTHORS (array of authors, queried individually)
 // apiQuery  = fallback; "NEW:" prefix = free-text + newest + langRestrict=de
 async function fetchBooksForGenre(apiQuery, genreName = '') {
+  const cutoff = new Date().getFullYear() - 8; // books from last 8 years preferred
   const authors = GENRE_AUTHORS[genreName];
   if (authors) {
-    // Query each author individually (OR doesn't work in Google Books API), merge + dedupe
+    // Query each author individually, merge + dedupe, prefer recent books
     const results = await Promise.all(
       authors.slice(0, 3).map(name =>
         fetchJson(`${API}?q=inauthor:${encodeURIComponent('"'+name+'"')}&langRestrict=de&orderBy=newest&maxResults=15`)
@@ -392,30 +393,26 @@ async function fetchBooksForGenre(apiQuery, genreName = '') {
       if (seen.has(i.id)) return false;
       seen.add(i.id); return true;
     });
-    return merged
-      .sort((a,b) => {
-        const ya = parseInt((a.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
-        const yb = parseInt((b.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
-        return yb - ya;
-      })
-      .slice(0, 16)
-      .map(i => mapBookItems([i])[0]);
+    const sorted = merged.sort((a,b) => {
+      const ya = parseInt((a.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
+      const yb = parseInt((b.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
+      return yb - ya;
+    });
+    // Prefer recent (last 8 years), fall back to all if not enough
+    const recent = sorted.filter(i => parseInt((i.volumeInfo?.publishedDate||'0').slice(0,4)) >= cutoff);
+    return (recent.length >= 4 ? recent : sorted).slice(0, 16).map(i => mapBookItems([i])[0]);
   }
 
-  let url, filterYear = false;
-  if (apiQuery.startsWith('NEW:')) {
-    url = `${API}?q=${encodeURIComponent(apiQuery.slice(4))}&maxResults=40&orderBy=newest&langRestrict=de`;
-    filterYear = true;
-  } else {
-    url = `${API}?q=subject:${encodeURIComponent(apiQuery)}&maxResults=40&orderBy=relevance`;
-  }
+  // Use newest ordering for all genre searches — relevance returns old classics
+  const isNew = apiQuery.startsWith('NEW:');
+  const q = isNew ? apiQuery.slice(4) : apiQuery;
+  const url = `${API}?q=${isNew ? '' : 'subject:'}${encodeURIComponent(q)}&maxResults=40&orderBy=newest&langRestrict=de`;
   const data = await fetchJson(url);
   return mapBookItems(
     (data.items||[])
       .filter(i => {
-        if (!filterYear) return true;
         const yr = parseInt((i.volumeInfo?.publishedDate||'').slice(0,4));
-        return !yr || yr >= 2018;
+        return !yr || yr >= cutoff;
       })
       .sort((a,b) => {
         const ya = parseInt((a.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
