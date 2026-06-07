@@ -344,6 +344,7 @@ em{font-style:italic;}
 .disc-detail-actions{display:flex;flex-direction:column;gap:9px;}
 .disc-detail-btn-primary{width:100%;padding:12px;border:none;border-radius:13px;font-family:'Jost',sans-serif;font-size:14px;font-weight:500;cursor:pointer;background:linear-gradient(135deg,var(--rose),var(--rd));color:#fff;}
 .disc-detail-btn-sage{width:100%;padding:12px;border:none;border-radius:13px;font-family:'Jost',sans-serif;font-size:14px;font-weight:500;cursor:pointer;background:var(--sl);color:var(--sd);}
+.disc-detail-btn-rose{width:100%;padding:12px;border:none;border-radius:13px;font-family:'Jost',sans-serif;font-size:14px;font-weight:500;cursor:pointer;background:var(--rl);color:var(--rd);}
 .disc-choice-label{font-size:13px;color:var(--tm);font-family:'Jost',sans-serif;margin:0 0 8px;text-align:center;}
 .disc-choice-label em{font-style:normal;font-weight:600;color:var(--text);}
 #disc-detail-actions{display:flex;flex-direction:column;gap:8px;}

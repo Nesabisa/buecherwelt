@@ -1559,10 +1559,17 @@ function renderDiscDetailActions(book, isNew) {
            <button class="disc-detail-btn-primary" onclick="closeDiscDetail();openEditBookModal('${existingBook.authorId}','${existingBook.id}')">✏️ Bewertung ändern</button>`
         : `<button class="disc-detail-btn-primary" onclick="closeDiscDetail();openEditBookModal('${existingBook.authorId}','${existingBook.id}')">✏️ Jetzt bewerten</button>`;
     } else if (authorName) {
+      const gid   = esc(book.googleId || book.id || '');
+      const title = esc(book.title || '');
+      const cover = esc(book.coverId || '');
+      const year  = esc(book.year || '');
       el.innerHTML = `
-        <p class="disc-choice-label">Was möchtest du mit <em>${esc(authorName)}</em> machen?</p>
-        <button class="disc-detail-btn-primary" data-author="${esc(authorName)}" onclick="addAuthorFromDisc(this)">📚 Zu meinen Autoren hinzufügen</button>
-        <button class="disc-detail-btn-sage" data-author="${esc(authorName)}" onclick="addAuthorToSuggestions(this.dataset.author)">⭐ Zu den Vorschlägen</button>`;
+        <p class="disc-choice-label">Was möchtest du tun?</p>
+        <button class="disc-detail-btn-primary" data-author="${esc(authorName)}" onclick="addAuthorFromDisc(this)">📚 Autor hinzufügen</button>
+        <button class="disc-detail-btn-rose"
+          data-gid="${gid}" data-title="${title}" data-author="${esc(authorName)}" data-cover="${cover}" data-year="${year}"
+          onclick="addSingleBookFromDisc(this)">📖 Nur dieses Buch</button>
+        <button class="disc-detail-btn-sage" data-author="${esc(authorName)}" onclick="addAuthorToSuggestions(this.dataset.author)">⭐ Zu Vorschlägen</button>`;
     } else { el.innerHTML = ''; }
   }
 }
@@ -1575,6 +1582,12 @@ function addAuthorFromDisc(btn) {
   const name = btn.dataset.author;
   closeDiscDetail();
   addAuthor(name, null, 'de');
+}
+
+async function addSingleBookFromDisc(btn) {
+  const { gid, title, author: authorName, cover, year } = btn.dataset;
+  closeDiscDetail();
+  await addBookDirect(gid, title, authorName, cover, year);
 }
 
 async function addDiscoverBook(btn, openRating) {
