@@ -1578,16 +1578,18 @@ function closeDiscDetail() {
   document.getElementById('modal-disc-detail').classList.add('hidden');
   _discBook = null;
 }
-function addAuthorFromDisc(btn) {
+async function addAuthorFromDisc(btn) {
   const name = btn.dataset.author;
   closeDiscDetail();
-  addAuthor(name, null, 'de');
+  await addAuthor(name, null, 'de');
+  renderDiscover();
 }
 
 async function addSingleBookFromDisc(btn) {
   const { gid, title, author: authorName, cover, year } = btn.dataset;
   closeDiscDetail();
   await addBookDirect(gid, title, authorName, cover, year);
+  renderDiscover();
 }
 
 async function addDiscoverBook(btn, openRating) {
