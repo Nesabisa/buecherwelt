@@ -1568,7 +1568,7 @@ function renderDiscDetailActions(book, isNew) {
         <button class="disc-detail-btn-primary" data-author="${esc(authorName)}" onclick="addAuthorFromDisc(this)">📚 Autor hinzufügen</button>
         <button class="disc-detail-btn-rose"
           data-gid="${gid}" data-title="${title}" data-author="${esc(authorName)}" data-cover="${cover}" data-year="${year}"
-          onclick="addSingleBookFromDisc(this)">📖 Nur dieses Buch</button>
+          onclick="addSingleBookFromDisc(this)">📖 Buch hinzufügen</button>
         <button class="disc-detail-btn-sage" data-author="${esc(authorName)}" onclick="addAuthorToSuggestions(this.dataset.author)">⭐ Zu Vorschlägen</button>`;
     } else { el.innerHTML = ''; }
   }
