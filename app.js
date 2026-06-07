@@ -387,52 +387,22 @@ function mapBookItems(items) {
 }
 
 // Shared helper: fetch books for a genre, sorted newest first.
-// genreName = original genre label → checked against GENRE_AUTHORS (array of authors, queried individually)
-// apiQuery  = fallback; "NEW:" prefix = free-text + newest + langRestrict=de
+// Fetch recent popular books for a genre — simple, current, no author-list bias.
 async function fetchBooksForGenre(apiQuery, genreName = '') {
-  const cutoff = new Date().getFullYear() - 8; // books from last 8 years preferred
-  const authors = GENRE_AUTHORS[genreName];
-  if (authors) {
-    // Query each author individually, merge + dedupe, prefer recent books
-    const results = await Promise.all(
-      authors.slice(0, 3).map(name =>
-        fetchJson(`${API}?q=inauthor:${encodeURIComponent('"'+name+'"')}&langRestrict=de&orderBy=newest&maxResults=15`)
-          .then(d => d.items || []).catch(() => [])
-      )
-    );
-    const seen = new Set();
-    const merged = results.flat().filter(i => {
-      if (seen.has(i.id)) return false;
-      seen.add(i.id); return true;
-    });
-    const sorted = merged.sort((a,b) => {
-      const ya = parseInt((a.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
-      const yb = parseInt((b.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
-      return yb - ya;
-    });
-    // Prefer recent (last 8 years), fall back to all if not enough
-    const recent = sorted.filter(i => parseInt((i.volumeInfo?.publishedDate||'0').slice(0,4)) >= cutoff);
-    return limitPerAuthor(dedupeBooks((recent.length >= 4 ? recent : sorted).slice(0, 20).map(i => mapBookItems([i])[0])));
-  }
-
-  // Use newest ordering for all genre searches — relevance returns old classics
+  const cutoff = new Date().getFullYear() - 5; // last 5 years
   const isNew = apiQuery.startsWith('NEW:');
-  const q = isNew ? apiQuery.slice(4) : apiQuery;
-  const url = `${API}?q=${isNew ? '' : 'subject:'}${encodeURIComponent(q)}&maxResults=40&orderBy=newest&langRestrict=de`;
+  const q = isNew ? apiQuery.slice(4) : `subject:${apiQuery}`;
+  const url = `${API}?q=${encodeURIComponent(q)}&langRestrict=de&orderBy=newest&maxResults=40`;
   const data = await fetchJson(url);
-  return limitPerAuthor(dedupeBooks(mapBookItems(
-    (data.items||[])
-      .filter(i => {
-        const yr = parseInt((i.volumeInfo?.publishedDate||'').slice(0,4));
-        return !yr || yr >= cutoff;
-      })
-      .sort((a,b) => {
-        const ya = parseInt((a.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
-        const yb = parseInt((b.volumeInfo?.publishedDate||'0000').slice(0,4)) || 0;
-        return yb - ya;
-      })
-      .slice(0, 20)
-  )));
+  const items = (data.items||[]).filter(i => {
+    const yr = parseInt((i.volumeInfo?.publishedDate||'').slice(0,4));
+    return !yr || yr >= cutoff;
+  }).sort((a,b)=>{
+    const ya=parseInt((a.volumeInfo?.publishedDate||'0').slice(0,4))||0;
+    const yb=parseInt((b.volumeInfo?.publishedDate||'0').slice(0,4))||0;
+    return yb-ya;
+  });
+  return limitPerAuthor(dedupeBooks(mapBookItems(items.slice(0,24))));
 }
 
 // Build a reverse lookup: author name (lowercase) → genres they appear in GENRE_AUTHORS
@@ -517,15 +487,8 @@ async function fetchPersonalizedSuggestions() {
     }
   }
 
-  // No liked books at all → safe defaults, never random book genres
-  const books = [];
-  for (const genre of ['Liebesroman', 'Krimi', 'Thriller', 'Historischer Roman']) {
-    const gb = await fetchBooksForGenre(genreForApi(genre), genre);
-    gb.filter(b => !knownAuthors.has((b.authors?.[0]||'').toLowerCase()) && !ownedGoogleIds.has(b.googleId))
-      .forEach(b => books.push(b));
-    if (books.length >= 16) break;
-  }
-  return limitPerAuthor(dedupeBooks(books)).slice(0, 16);
+  // No liked books at all → show current popular German fiction
+  return fetchNeuerscheinungen();
 }
 
 async function fetchGenreSuggestions(stats) {
