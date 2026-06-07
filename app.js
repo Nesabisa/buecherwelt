@@ -449,7 +449,7 @@ async function fetchPersonalizedSuggestions() {
   S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
 
   const likedAuthors = S.authors.filter(a =>
-    !a.hidden && (S.books[a.id]||[]).some(b => b.rating === 'liked')
+    !a.hidden && (S.books[a.id]||[]).some(b => b.rating === 'liked' && !b.hiddenFromList)
   );
 
   if (likedAuthors.length > 0) {
@@ -460,7 +460,7 @@ async function fetchPersonalizedSuggestions() {
     for (const a of likedAuthors) {
       const genres = authorGenreMap[a.name.toLowerCase()] || [];
       const bookGenres = [];
-      (S.books[a.id]||[]).filter(b => b.rating==='liked'||b.isFavorite).forEach(b =>
+      (S.books[a.id]||[]).filter(b => (b.rating==='liked'||b.isFavorite) && !b.hiddenFromList).forEach(b =>
         (b.genres||[]).filter(g => !SKIP_GENRES.has(g) && GENRE_AUTHORS[g]).forEach(g => bookGenres.push(g))
       );
       for (const genre of [...new Set([...genres, ...bookGenres])]) {
@@ -490,7 +490,7 @@ async function fetchPersonalizedSuggestions() {
     // but only genres we know how to search (filters out bad Google tags like "Health & Fitness")
     const likedGenres = {};
     likedAuthors.forEach(a => {
-      (S.books[a.id]||[]).filter(b => b.rating==='liked'||b.isFavorite).forEach(b => {
+      (S.books[a.id]||[]).filter(b => (b.rating==='liked'||b.isFavorite) && !b.hiddenFromList).forEach(b => {
         (b.genres||[]).filter(g => !SKIP_GENRES.has(g) && isKnownGenre(g)).forEach(g => {
           likedGenres[g] = (likedGenres[g] || 0) + 1;
         });
