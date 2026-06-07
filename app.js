@@ -5,6 +5,7 @@ const SUGGESTED_AUTHORS = [
 ];
 // Genres that are too generic to be useful for recommendations
 const SKIP_GENRES = new Set([
+  // Too generic to be useful — Google Books uses these as catch-alls
   'Fiction','Juvenile Fiction','Nonfiction','Juvenile Nonfiction',
   'Literary Collections','Literary Criticism','General','Short Stories','Classics',
 ]);
@@ -425,8 +426,73 @@ async function fetchBooksForGenre(apiQuery, genreName = '') {
   );
 }
 
+// Build a reverse lookup: author name (lowercase) → genres they appear in GENRE_AUTHORS
+function buildAuthorGenreMap() {
+  const map = {};
+  for (const [genre, authors] of Object.entries(GENRE_AUTHORS)) {
+    for (const author of authors) {
+      (map[author.toLowerCase()] = map[author.toLowerCase()] || []).push(genre);
+    }
+  }
+  return map;
+}
+
+// "Für dich" — author-similarity based on liked/favorited books
+async function fetchPersonalizedSuggestions() {
+  const knownAuthors = new Set(S.authors.map(a => a.name.toLowerCase()));
+  const ownedGoogleIds = new Set();
+  S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
+
+  // Find authors whose books the user has liked or favorited
+  const likedAuthors = S.authors.filter(a =>
+    (S.books[a.id]||[]).some(b => b.rating === 'liked' || b.isFavorite)
+  );
+
+  if (likedAuthors.length > 0) {
+    const authorGenreMap = buildAuthorGenreMap();
+    const sugAuthors = []; // [{name, because}]
+    const seen = new Set();
+
+    for (const a of likedAuthors) {
+      // Find genres this author appears in
+      const genres = authorGenreMap[a.name.toLowerCase()] || [];
+      // Also use genres from their liked books directly
+      const bookGenres = [];
+      (S.books[a.id]||[]).filter(b => b.rating==='liked'||b.isFavorite).forEach(b =>
+        (b.genres||[]).filter(g => !SKIP_GENRES.has(g) && GENRE_AUTHORS[g]).forEach(g => bookGenres.push(g))
+      );
+      const allGenres = [...new Set([...genres, ...bookGenres])];
+
+      for (const genre of allGenres) {
+        for (const sug of (GENRE_AUTHORS[genre] || [])) {
+          if (!seen.has(sug.toLowerCase()) && !knownAuthors.has(sug.toLowerCase())) {
+            seen.add(sug.toLowerCase());
+            sugAuthors.push({ name: sug, because: a.name });
+          }
+        }
+      }
+    }
+
+    if (sugAuthors.length > 0) {
+      const books = [];
+      for (const { name: sugName, because } of sugAuthors.slice(0, 5)) {
+        try {
+          const ab = await fetchBooksForAuthor(sugName, 'de');
+          ab.filter(b => !ownedGoogleIds.has(b.googleId))
+            .slice(0, 3)
+            .forEach(b => books.push({ ...b, _because: because }));
+        } catch {}
+        if (books.length >= 16) break;
+      }
+      if (books.length >= 3) return books.slice(0, 16);
+    }
+  }
+
+  // Fallback: genre-based suggestions
+  return fetchGenreSuggestions(S.genreStats);
+}
+
 async function fetchGenreSuggestions(stats) {
-  // Get top 3 genres from liked books, fall back to any genre from saved books
   let top = Object.entries(stats).filter(([g])=>!SKIP_GENRES.has(g)).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g);
   if (!top.length) {
     const fromBooks = new Set();
@@ -436,13 +502,10 @@ async function fetchGenreSuggestions(stats) {
     top = [...fromBooks].slice(0,3);
   }
   if (!top.length) top = ['Krimi', 'Liebesroman', 'Thriller'];
-
-  // Get books from all top genres, mix them, exclude known authors and already-owned books
   const books = [];
   const knownAuthors = new Set(S.authors.map(a => a.name.toLowerCase()));
   const ownedGoogleIds = new Set();
   S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
-
   for (const genre of top) {
     const genreBooks = await fetchBooksForGenre(genreForApi(genre), genre);
     genreBooks
@@ -1083,7 +1146,7 @@ async function loadDiscover() {
     } catch {}
   }
   S.newReleasesAll = allNew;
-  try { S.suggestions = await fetchGenreSuggestions(S.genreStats); } catch { S.suggestions = []; }
+  try { S.suggestions = await fetchPersonalizedSuggestions(); } catch { S.suggestions = []; }
   _lastDiscoverLoad = Date.now();
   renderDiscover();
   if (allNew.length) { document.getElementById('new-badge').classList.remove('hidden'); }
@@ -1109,13 +1172,12 @@ function renderDiscover() {
     hint.textContent = 'Bewerte Bücher mit 💚 oder wähle ein Genre!';
     sug.innerHTML    = '<p class="disc-empty">Noch keine Empfehlungen vorhanden.</p>';
   } else {
-    const topG = S.selectedDiscoverGenre
-      || Object.entries(S.genreStats||{}).filter(([g])=>!SKIP_GENRES.has(g)).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+    const becauseAuthor = !S.selectedDiscoverGenre && S.suggestions.find(b => b._because)?._because;
     hint.textContent = S.selectedDiscoverGenre
       ? (S.selectedDiscoverGenre.startsWith('AUTHOR:')
           ? `Bücher von ${S.selectedDiscoverGenre.slice(7)}`
           : `Genre: ${S.selectedDiscoverGenre}`)
-      : (topG ? `Weil du ${topG}-Bücher liebst …` : 'Basierend auf deinen Lieblingsgenres');
+      : (becauseAuthor ? `Weil du ${becauseAuthor} magst …` : 'Basierend auf deinen Bewertungen');
     sug.innerHTML = S.suggestions.map(b=>discCardHtml(b,false)).join('');
   }
   sug.onclick = e => {
@@ -1270,7 +1332,7 @@ async function loadSuggestionsForGenre(genre) {
   try {
     let books;
     if (!genre) {
-      books = await fetchGenreSuggestions(S.genreStats);
+      books = await fetchPersonalizedSuggestions();
     } else if (genre === 'NYT-Bestseller') {
       books = await fetchNYTBestsellers();
     } else if (genre.startsWith('AUTHOR:')) {
@@ -1297,10 +1359,10 @@ async function loadSuggestionsForGenre(genre) {
       hint.textContent = genre ? `Keine Bücher für „${genre.startsWith('AUTHOR:')?genre.slice(7):genre}" gefunden` : 'Keine Empfehlungen gefunden';
       sug.innerHTML = '<p class="disc-empty">Nichts gefunden – versuch ein anderes Genre!</p>';
     } else {
-      const topG = genre || Object.entries(S.genreStats||{}).filter(([g])=>!SKIP_GENRES.has(g)).sort((a,b)=>b[1]-a[1])[0]?.[0];
+      const becauseAuthor = !genre && books.find(b => b._because)?._because;
       hint.textContent = genre
         ? (genre.startsWith('AUTHOR:') ? `Bücher von ${genre.slice(7)}` : `Genre: ${genre}`)
-        : (topG ? `Weil du ${topG}-Bücher liebst …` : 'Beliebte Bücher');
+        : (becauseAuthor ? `Weil du ${becauseAuthor} magst …` : 'Basierend auf deinen Bewertungen');
       sug.innerHTML = books.map(b=>discCardHtml(b,false)).join('');
     }
     sug.onclick = e => {
