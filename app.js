@@ -605,7 +605,21 @@ async function addBookToExistingAuthor(googleId, title, authorName, coverId, yea
   const author = S.authors.find(a => a.name.toLowerCase()===authorName.toLowerCase());
   if (!author) return;
   const bookId = `${author.id}_${googleId}`;
-  if ((S.books[author.id]||[]).some(b => b.id===bookId)) { jumpToBook(author.id, bookId); return; }
+  const existingInAuthor = (S.books[author.id]||[]).find(b => b.id===bookId);
+  if (existingInAuthor) {
+    if (existingInAuthor.hiddenFromList) {
+      // Book was removed — restore it
+      existingInAuthor.hiddenFromList = false;
+      await updateBook(bookId, { hiddenFromList: false });
+      renderAutoren(); renderAlleBuecher();
+      clearBookTitleSearch();
+      switchTab('buecher');
+      setTimeout(() => document.getElementById(`li-${bookId}`)?.scrollIntoView({behavior:'smooth',block:'center'}), 200);
+    } else {
+      jumpToBook(author.id, bookId);
+    }
+    return;
+  }
   const lang    = author.lang || 'de';
   const newBook = {
     id: bookId, googleId, authorId: author.id,
@@ -1183,17 +1197,21 @@ function renderDiscover() {
 
   const sug  = document.getElementById('suggestions-list');
   const hint = document.getElementById('suggestions-hint');
-  if (!S.suggestions.length) {
+  // Filter out books already in library (non-hidden) at render time so list stays current
+  const ownedNow = new Set();
+  S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => { if (!b.hiddenFromList) ownedNow.add(b.googleId); }));
+  const visibleSuggestions = S.suggestions.filter(b => !ownedNow.has(b.googleId || b.id));
+  if (!visibleSuggestions.length) {
     hint.textContent = 'Bewerte Bücher mit 💚 oder wähle ein Genre!';
     sug.innerHTML    = '<p class="disc-empty">Noch keine Empfehlungen vorhanden.</p>';
   } else {
-    const becauseAuthor = !S.selectedDiscoverGenre && S.suggestions.find(b => b._because)?._because;
+    const becauseAuthor = !S.selectedDiscoverGenre && visibleSuggestions.find(b => b._because)?._because;
     hint.textContent = S.selectedDiscoverGenre
       ? (S.selectedDiscoverGenre.startsWith('AUTHOR:')
           ? `Bücher von ${S.selectedDiscoverGenre.slice(7)}`
           : `Genre: ${S.selectedDiscoverGenre}`)
       : (becauseAuthor ? `Weil du ${becauseAuthor} magst …` : 'Basierend auf deinen Bewertungen');
-    sug.innerHTML = S.suggestions.map(b=>discCardHtml(b,false)).join('');
+    sug.innerHTML = visibleSuggestions.map(b=>discCardHtml(b,false)).join('');
   }
   sug.onclick = e => {
     const card = e.target.closest('.disc-card');
@@ -1552,7 +1570,7 @@ function renderDiscDetailActions(book, isNew) {
     const authorName = (Array.isArray(book.authors) ? book.authors[0] : '') || '';
     const knownAuthor = S.authors.find(a => a.name.toLowerCase() === authorName.toLowerCase());
     const gid = book.googleId || book.id;
-    const existingBook = knownAuthor ? S.books[knownAuthor.id]?.find(b => b.googleId === gid) : null;
+    const existingBook = knownAuthor ? S.books[knownAuthor.id]?.find(b => b.googleId === gid && !b.hiddenFromList) : null;
     if (existingBook) {
       el.innerHTML = existingBook.rating
         ? `<div class="disc-detail-status">${ratingEmoji(existingBook.rating)} Bereits bewertet</div>
