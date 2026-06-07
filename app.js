@@ -449,7 +449,7 @@ async function fetchPersonalizedSuggestions() {
   S.authors.forEach(a => (S.books[a.id]||[]).forEach(b => ownedGoogleIds.add(b.googleId)));
 
   const likedAuthors = S.authors.filter(a =>
-    (S.books[a.id]||[]).some(b => b.rating === 'liked')
+    !a.hidden && (S.books[a.id]||[]).some(b => b.rating === 'liked')
   );
 
   if (likedAuthors.length > 0) {
